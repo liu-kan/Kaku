@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="assets/logo.png" width="120" alt="Kaku Logo" />
   <h1>Kaku</h1>
   <p><em>A fast, out-of-the-box terminal built for AI coding.</em></p>
 </div>
@@ -31,7 +30,7 @@
 1. 👉 [**Download Kaku DMG**](https://github.com/tw93/Kaku/releases/latest) & Drag to Applications
 2. Open Kaku - Right-click Open if blocked
 3. Run `sudo xattr -d com.apple.quarantine /Applications/Kaku.app` if needed
-4. On first launch, Kaku will offer to set up your shell environment automatically (Starship, z, Autosuggestions, Highlighting)
+4. On first launch, Kaku will automatically set up your shell environment
 
 ## Usage Guide
 
@@ -56,13 +55,11 @@ Kaku comes with intuitive macOS-native shortcuts:
 
 ## Configuration
 
-**Config Load Order:**
+Kaku automatically configures **Starship**, **z**, **Autosuggestions**, and **Syntax Highlighting**.
 
-1. **Environment Variable**: `KAKU_CONFIG_FILE` (if set)
-2. **Bundled Config**: `Kaku.app/Contents/Resources/kaku.lua` (Default experience)
-3. **User Config**: `~/.kaku.lua` or `~/.config/kaku/kaku.lua`
-
-To customize Kaku, simply create a `~/.kaku.lua` file. It will override the bundled defaults where specified.
+1. **Environment Variable**: `KAKU_CONFIG_FILE`
+2. **Bundled Config**: `Kaku.app/Contents/Resources/kaku.lua`
+3. **User Config**: `~/.config/kaku/kaku.lua`
 
 ## Development
 
@@ -77,16 +74,8 @@ cargo test
 
 # Build application and DMG
 ./scripts/build.sh
-# Outputs: dist/Kaku.app and dist/Kaku-{version}.dmg
-
-# Build and open immediately
-./scripts/build.sh --open
-
-# Clean build artifacts
-rm -rf dist target
+# Outputs: dist/Kaku.app and dist/Kaku.dmg
 ```
-
-The build script is macOS-only and requires Rust/Cargo installed.
 
 ## Support
 
