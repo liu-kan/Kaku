@@ -18,13 +18,11 @@
 
 ## Features
 
-- **Out-of-the-Box Aesthetics**: Beautiful defaults, polished UI/UX, and carefully selected fonts—no configuration needed to look good.
-- **Built for AI Coding**: Optimized for the "Vibe Coding" era, designed to enhance AI-assisted workflows.
-- **Instant Shell Integration**: Comes with **Starship**, **Zsh Syntax Highlighting**, **Autosuggestions**, and **Zoxide** (smart directory jumper) built-in. One click to set up a pro-level shell environment.
-- **Streamlined & Fast**: Stripped of heavy, unused features from WezTerm. Simplified logic for a cleaner, lighter, and more performant experience.
-- **MacOS Native**: Deeply optimized for macOS, providing a native feel that fits perfectly into your workflow.
-- **GPU Accelerated**: Blazing fast rendering powered by modern GPU APIs.
-- **Lua Configuration**: Retains WezTerm's powerful Lua scripting for infinite customization when you need it.
+- **Zero Config**: Polished defaults with carefully selected fonts and themes.
+- **Built-in Shell Suite**: Comes with Starship, Zoxide, Syntax Highlighting, and Autosuggestions.
+- **macOS Native**: Optimized for macOS with smooth animations.
+- **Fast & Lightweight**: GPU-accelerated rendering with a stripped-down, lightweight core.
+- **Lua Scripting**: Infinite customization power via Lua.
 
 ## Quick Start
 
