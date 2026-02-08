@@ -85,16 +85,22 @@ EOF
 
 	# Check if compinit is missing
 	if ! grep -q "autoload -Uz compinit" "$ZSHRC"; then
-		echo "   -> Detected outdated config (missing compinit)."
-		# We can't easily insert at top, but we can warn or append.
-		# Appending might be too late if plugins already loaded?
-		# zsh-syntax-highlighting needs compinit BEFORE it runs.
-		# Since we can't safely edit the middle of the file easily in shell script without risks,
-		# we will advise manual update for now, OR rely on the fact that user might have OMZ compinit.
-		# But for pure users, this is an issue.
+		echo "   -> Detected outdated config (missing compinit/colors)."
+		echo "   -> Appending fixes..."
+		cat <<EOF >>"$ZSHRC"
 
-		# Force append it before highlighting if we were re-writing.
-		# For now, let's just update plugins and hope for the best or tell user to reset.
+# Added by Kaku Update (Colors & Fixes)
+# Enable color output for ls (OMZ style colors)
+export CLICOLOR=1
+export LSCOLORS="Gxfxcxdxbxegedabagacad"
+
+# Set default Zsh options for interactive use
+setopt interactive_comments
+bindkey -e
+
+# Ensure compinit is loaded for zsh-syntax-highlighting and completions
+autoload -Uz compinit && compinit
+EOF
 	fi
 
 	echo "   -> Updating plugins files only."
@@ -116,6 +122,12 @@ export KAKU_ZSH_DIR="\$HOME/.config/kaku/zsh"
 
 # Add bundled binaries to PATH
 export PATH="\$KAKU_ZSH_DIR/bin:\$PATH"
+
+# Common Aliases (OMZ compatible)
+alias ll='ls -lh'
+alias la='ls -lAh'
+alias l='ls -lah'
+alias ...='cd ../..'
 
 # Enable color output for ls (OMZ style colors)
 export CLICOLOR=1
