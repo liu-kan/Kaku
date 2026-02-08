@@ -17,7 +17,6 @@
   <br/>
   Kaku is a deeply customized fork of <a href="https://github.com/wez/wezterm">WezTerm</a>, designed for an <b>out-of-the-box</b> experience.
   <br/>
-  <em>🚧 Work In Progress: Kaku is currently in active development. Features may change.</em>
 </p>
 
 ## Features
@@ -32,7 +31,7 @@
 
 ### Install
 
-1. 👉 [**Download Kaku DMG**](https://github.com/tw93/Kaku/releases/latest) & Drag to Applications
+1. [**Download Kaku DMG**](https://github.com/tw93/Kaku/releases/latest) & Drag to Applications
 2. Open Kaku - Right-click Open if blocked
 3. Run `sudo xattr -d com.apple.quarantine /Applications/Kaku.app` if needed
 
@@ -117,10 +116,8 @@ rm -rf dist target
 
 - If Kaku helped you, star the repo or [share it](https://twitter.com/intent/tweet?url=https://github.com/tw93/Kaku&text=Kaku%20-%20A%20fast,%20out-of-the-box%20terminal%20built%20for%20AI%20coding.) with friends.
 - Got ideas or found bugs? Open an issue or PR.
-- Like Kaku? <a href="https://miaoyan.app/cats.html?name=Kaku" target="_blank">Buy Tw93 a Coke</a> to support the project! 🥤 Supporters below.
-
-<a href="https://miaoyan.app/cats.html?name=Kaku"><img src="https://miaoyan.app/assets/sponsors.svg" width="1000" loading="lazy" /></a>
+- Like Kaku? <a href="https://miaoyan.app/cats.html?name=Kaku" target="_blank">Buy Tw93 a Coke</a> to support the project! 🥤
 
 ## License
 
-MIT License. See [LICENSE](LICENSE.md) for details.
+MIT License, feel free to enjoy and participate in open source.
