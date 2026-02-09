@@ -674,8 +674,8 @@ wezterm.on('gui-startup', function(cmd)
 
     wezterm.mux.spawn_window {
       args = { 'bash', update_script },
-      width = 80,
-      height = 30,
+      width = 106,
+      height = 22,
     }
     return
   end
