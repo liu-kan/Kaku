@@ -1,7 +1,6 @@
 <div align="center">
   <h1>Kaku</h1>
   <p><em>A fast, out-of-the-box terminal built for AI coding.</em></p>
-  <p>🚧 Early Development - Features and APIs may change</p>
 </div>
 
 <p align="center">
@@ -15,22 +14,21 @@
 <p align="center">
   <img src="assets/kaku.jpeg" alt="Kaku Screenshot" width="1000" />
   <br/>
-  Kaku is a deeply customized fork of <a href="https://github.com/wez/wezterm">WezTerm</a>, designed for an out-of-the-box experience.
+  Kaku is a deeply customized fork of <a href="https://github.com/wez/wezterm">WezTerm</a>, designed for an out-of-the-box experience, currently in early development where features and APIs may change.
 </p>
 
 ## Features
 
 - **Zero Config**: Polished defaults with JetBrains Mono, optimized macOS font rendering, and smooth animations.
-- **Built-in Shell Suite**: Comes pre-loaded with Starship prompt, z smart jumper, Delta git diff beautifier, syntax highlighting, and autosuggestions.
+- **Built-in Shell Suite**: Comes pre-loaded with Starship, z, Delta, syntax highlighting, and autosuggestions.
 - **Fast & Lightweight**: 40% smaller binary, instant startup with lazy loading, and a stripped-down GPU-accelerated core.
 - **Lua Scripting**: Retains the full power of WezTerm's Lua engine for infinite customization.
 
 ## Quick Start
 
 1. [Download Kaku DMG](https://github.com/tw93/Kaku/releases/latest) & Drag to Applications
-2. Open Kaku - Right-click Open if blocked
-3. Run `sudo xattr -d com.apple.quarantine /Applications/Kaku.app` if needed
-4. On first launch, Kaku will automatically set up your shell environment
+2. Open Kaku. If macOS blocks the app, go to System Settings → Privacy & Security → click "Open Anyway"
+3. On first launch, Kaku will automatically set up your shell environment
 
 ## Usage Guide
 
@@ -55,29 +53,30 @@ Kaku comes with intuitive macOS-native shortcuts:
 
 ## Configuration
 
-Kaku automatically configures these built-in tools:
+Kaku comes with a carefully curated suite of CLI tools, pre-configured for immediate productivity:
 
-- **Starship** - Fast prompt with git status and language versions
-- **z** - Jump to directories with `z <name>`
-- **Delta** - Syntax-highlighted git diffs, works automatically
-- **Syntax Highlighting** - Real-time command validation
-- **Autosuggestions** - Fish-style suggestions from history
+- **Starship**: A fast, customizable prompt showing git status, package versions, and execution time.
+- **z**: A smarter cd command that learns your most used directories for instant navigation.
+- **Delta**: A syntax-highlighting pager for git, diff, and grep output.
+- **Syntax Highlighting**: Real-time command validation and coloring.
+- **Autosuggestions**: Intelligent, history-based completions similar to Fish shell.
 
-Config loading priority:
+### Customization
 
-1. **Environment Variable**: `KAKU_CONFIG_FILE`
-2. **Bundled Config**: `Kaku.app/Contents/Resources/kaku.lua`
-3. **User Config**: `~/.config/kaku/kaku.lua`
+Kaku is fully configurable via standard Lua scripts and is 100% compatible with WezTerm configuration. It loads configuration files in the following priority order:
+
+1. **Self-Contained**: `Kaku.app/Contents/Resources/kaku.lua` handles default settings.
+2. **User Overrides**: Create `~/.config/kaku/kaku.lua` and return your configuration table.
 
 ## Why Kaku?
 
-I really enjoy using the CLI to handle everything in my work and life. I've even built open-source tools like [tw93/mole](https://github.com/tw93/mole) and [tw93/pake](https://github.com/tw93/pake) to stay in the terminal.
+I heavily rely on the CLI for both work and personal projects. Tools I've built, like [Mole](https://github.com/tw93/mole) and [Pake](https://github.com/tw93/pake), reflect this workflow.
 
-I used Alacritty for a long time but its lack of multi-tab support makes it inconvenient when doing AI coding. Kitty has some aesthetic and window positioning issues I couldn't get past. Ghostty is promising but I haven't found a good solution for its font rendering yet. Warp feels too heavy and requires a login. iTerm2 is reliable but shows its age and is harder to deeply customize.
+I used Alacritty for years, but its lack of multi-tab support became cumbersome for AI-assisted coding. Kitty has some aesthetic and positioning quirks I couldn't get past. Ghostty shows promise but font rendering needs work. Warp feels bloated and requires a login. iTerm2 is reliable but showing its age and harder to deeply customize.
 
-WezTerm is fantastic and very hackable. However, I wanted a more "out-of-the-box" experience that didn't require extensive configuration.
+WezTerm is robust and hackable, and I am deeply grateful for its powerful engine. However, I wanted an environment that was ready immediately, without extensive configuration.
 
-So I built Kaku for AI coding. Fast, beautiful, and ready to use.
+So I built Kaku. Fast, polished, and ready for work.
 
 ### Performance
 
