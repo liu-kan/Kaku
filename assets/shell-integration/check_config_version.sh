@@ -8,7 +8,7 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-CURRENT_CONFIG_VERSION=4
+CURRENT_CONFIG_VERSION=5
 VERSION_FILE="$HOME/.config/kaku/.kaku_config_version"
 
 # Determine resource dir
@@ -49,6 +49,11 @@ if [[ $user_version -lt 4 ]]; then
 	echo "  • Delta defaults to side-by-side with line numbers"
 	echo "  • Mouse wheel scrolling enabled in diff pager"
 	echo "  • Cleaner file labels and theme-aligned highlighting"
+fi
+if [[ $user_version -lt 5 ]]; then
+	echo "  • Refined diff header display to avoid duplicate file hints"
+	echo "  • Updated Delta default theme and label readability"
+	echo "  • Better protection for user custom kaku.lua during onboarding"
 fi
 echo ""
 
