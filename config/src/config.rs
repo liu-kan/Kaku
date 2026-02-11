@@ -1037,11 +1037,6 @@ impl Config {
             }
         }
 
-        if let Some(path) = std::env::var_os("KAKU_CONFIG_FILE") {
-            log::trace!("Note: KAKU_CONFIG_FILE is set in the environment");
-            paths.insert(0, PathPossibility::required(path.into()));
-        }
-
         if let Some(path) = CONFIG_FILE_OVERRIDE.lock().unwrap().as_ref() {
             log::trace!("Note: config file override is set");
             paths.insert(0, PathPossibility::required(path.clone()));
