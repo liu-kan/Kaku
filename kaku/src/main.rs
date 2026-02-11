@@ -144,7 +144,10 @@ enum SubCommand {
     #[command(name = "init", about = "Initialize Kaku shell integration")]
     Init(init::InitCommand),
 
-    #[command(name = "reset", about = "Reset Kaku shell integration and managed defaults")]
+    #[command(
+        name = "reset",
+        about = "Reset Kaku shell integration and managed defaults"
+    )]
     Reset(reset::ResetCommand),
 }
 

@@ -89,9 +89,21 @@ mod imp {
         remove_kaku_shell_dir(&mut report)?;
         cleanup_git_delta_defaults(&mut report)?;
         cleanup_theme_block(&mut report)?;
-        remove_file_if_exists(config_home().join(".kaku_config_version"), "removed config version marker", &mut report)?;
-        remove_file_if_exists(config_home().join(".kaku_window_geometry"), "removed persisted window geometry", &mut report)?;
-        remove_dir_if_exists(config_home().join("backups"), "removed Kaku backup directory", &mut report)?;
+        remove_file_if_exists(
+            config_home().join(".kaku_config_version"),
+            "removed config version marker",
+            &mut report,
+        )?;
+        remove_file_if_exists(
+            config_home().join(".kaku_window_geometry"),
+            "removed persisted window geometry",
+            &mut report,
+        )?;
+        remove_dir_if_exists(
+            config_home().join("backups"),
+            "removed Kaku backup directory",
+            &mut report,
+        )?;
         remove_empty_kaku_config_dir(&mut report)?;
 
         report.print();
@@ -148,8 +160,8 @@ mod imp {
             return Ok(());
         }
 
-        let original = std::fs::read_to_string(&zshrc)
-            .with_context(|| format!("read {}", zshrc.display()))?;
+        let original =
+            std::fs::read_to_string(&zshrc).with_context(|| format!("read {}", zshrc.display()))?;
         if !original.contains(KAKU_SOURCE_PATTERN) {
             report.skipped(format!("no Kaku source line found in {}", zshrc.display()));
             return Ok(());
@@ -208,7 +220,11 @@ mod imp {
                 return Ok(false);
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("git config --get-all {} failed: {}", key, stderr.trim()));
+            return Err(anyhow!(
+                "git config --get-all {} failed: {}",
+                key,
+                stderr.trim()
+            ));
         }
 
         let values: Vec<String> = String::from_utf8_lossy(&output.stdout)
@@ -249,11 +265,10 @@ mod imp {
         let original = std::fs::read_to_string(&config_path)
             .with_context(|| format!("read {}", config_path.display()))?;
 
-        let (after_managed, changed_managed) = strip_theme_block(
-            &original,
-            "-- ===== Kaku Theme Defaults (managed) =====",
-        );
-        let (after_legacy, changed_legacy) = strip_theme_block(&after_managed, "-- ===== Kaku Theme =====");
+        let (after_managed, changed_managed) =
+            strip_theme_block(&original, "-- ===== Kaku Theme Defaults (managed) =====");
+        let (after_legacy, changed_legacy) =
+            strip_theme_block(&after_managed, "-- ===== Kaku Theme =====");
 
         if !changed_managed && !changed_legacy {
             report.skipped("no managed Kaku theme block found in ~/.config/kaku/kaku.lua");
@@ -301,7 +316,11 @@ mod imp {
         (merged, true)
     }
 
-    fn remove_file_if_exists(path: PathBuf, changed_msg: &str, report: &mut ResetReport) -> anyhow::Result<()> {
+    fn remove_file_if_exists(
+        path: PathBuf,
+        changed_msg: &str,
+        report: &mut ResetReport,
+    ) -> anyhow::Result<()> {
         if !path.exists() {
             report.skipped(format!("{} not found", path.display()));
             return Ok(());
@@ -312,7 +331,11 @@ mod imp {
         Ok(())
     }
 
-    fn remove_dir_if_exists(path: PathBuf, changed_msg: &str, report: &mut ResetReport) -> anyhow::Result<()> {
+    fn remove_dir_if_exists(
+        path: PathBuf,
+        changed_msg: &str,
+        report: &mut ResetReport,
+    ) -> anyhow::Result<()> {
         if !path.exists() {
             report.skipped(format!("{} not found", path.display()));
             return Ok(());
@@ -338,7 +361,8 @@ mod imp {
     }
 
     fn is_dir_empty(path: &Path) -> anyhow::Result<bool> {
-        let mut iter = std::fs::read_dir(path).with_context(|| format!("read {}", path.display()))?;
+        let mut iter =
+            std::fs::read_dir(path).with_context(|| format!("read {}", path.display()))?;
         Ok(iter.next().is_none())
     }
 }
