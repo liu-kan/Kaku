@@ -313,6 +313,13 @@ impl super::TermWindow {
             }
             context.request_drag_move();
             return;
+        } else if event.coords.y < terminal_origin_y
+            && self.current_mouse_capture.is_none()
+        {
+            // Mouse is above terminal content (title/padding area) with no UI
+            // item hit and no active capture. Explicitly set Arrow cursor so
+            // macOS does not fall back to the NSTextInputClient default IBeam.
+            context.set_cursor(Some(MouseCursor::Arrow));
         } else if matches!(
             self.current_mouse_capture,
             None | Some(MouseCapture::TerminalPane(_))
