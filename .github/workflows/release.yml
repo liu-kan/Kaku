@@ -24,7 +24,31 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Import signing certificate
+        if: env.KAKU_SIGNING_IDENTITY != ''
+        env:
+          KAKU_SIGNING_IDENTITY: ${{ secrets.KAKU_SIGNING_IDENTITY }}
+          KAKU_CERTIFICATE_P12: ${{ secrets.KAKU_CERTIFICATE_P12 }}
+          KAKU_CERTIFICATE_PASSWORD: ${{ secrets.KAKU_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "Setting up signing certificate..."
+          # Create temporary keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 16)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Import certificate
+          echo "$KAKU_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$KAKU_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          
+          echo "Certificate imported successfully"
+
       - name: Build Kaku
+        env:
+          KAKU_SIGNING_IDENTITY: ${{ secrets.KAKU_SIGNING_IDENTITY }}
         run: |
           PROFILE=release-opt BUILD_ARCH=universal ./scripts/build.sh
 
