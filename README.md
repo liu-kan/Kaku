@@ -65,13 +65,7 @@ Kaku comes with a carefully curated suite of CLI tools, pre-configured for immed
 - **Syntax Highlighting**: Real-time command validation and coloring.
 - **Autosuggestions**: Intelligent, history-based completions similar to Fish shell.
 
-### Configuration
-
-Kaku uses `~/.config/kaku/kaku.lua` for configuration, fully compatible with WezTerm's Lua API. Built-in defaults are located at `Kaku.app/Contents/Resources/kaku.lua` as fallback only.
-
-### CLI Commands
-
-Run `kaku` in your terminal to see all available commands. Common operations include `kaku update` to check and apply updates, `kaku reset` to remove shell integrations, and `kaku config` to open the configuration file.
+Kaku uses `~/.config/kaku/kaku.lua` for configuration, fully compatible with WezTerm's Lua API, with built-in defaults at `Kaku.app/Contents/Resources/kaku.lua` as fallback. Run `kaku` in your terminal to see all available commands such as `kaku update`, `kaku reset`, and `kaku config`.
 
 ## Why Kaku?
 
