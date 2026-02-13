@@ -3129,6 +3129,12 @@ impl WindowView {
     extern "C" fn will_enter_fullscreen(this: &mut Object, _sel: Sel, _notification: id) {
         if let Some(this) = Self::get_this(this) {
             this.inner.borrow_mut().in_fullscreen_transition = true;
+            // Record animation start time to hide content during native fullscreen transition
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            this.last_resize_animation_time_ms.set(now_ms);
         }
     }
 
@@ -3142,6 +3148,12 @@ impl WindowView {
     extern "C" fn will_exit_fullscreen(this: &mut Object, _sel: Sel, _notification: id) {
         if let Some(this) = Self::get_this(this) {
             this.inner.borrow_mut().in_fullscreen_transition = true;
+            // Record animation start time to hide content during native fullscreen transition
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            this.last_resize_animation_time_ms.set(now_ms);
         }
     }
 
