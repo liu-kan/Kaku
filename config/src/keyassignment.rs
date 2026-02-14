@@ -268,11 +268,10 @@ impl SpawnCommand {
         let mut args = vec![];
         let mut set_environment_variables = HashMap::new();
         for arg in cmd.get_argv() {
-            args.push(
-                arg.to_str()
-                    .ok_or_else(|| anyhow::anyhow!("command argument is not utf8"))?
-                    .to_string(),
-            );
+            // Use lossy conversion instead of hard-failing so that
+            // non-UTF-8 paths (e.g. GBK filenames on Linux) don't
+            // prevent spawning.
+            args.push(arg.to_string_lossy().into_owned());
         }
         for (k, v) in cmd.iter_full_env_as_str() {
             set_environment_variables.insert(k.to_string(), v.to_string());

@@ -28,6 +28,27 @@ fn encoding_rs(encoding: PaneEncoding) -> Option<&'static Encoding> {
     }
 }
 
+/// Decode raw bytes into a UTF-8 string using the given pane encoding.
+/// First tries UTF-8; if that fails and the encoding is non-UTF-8,
+/// falls back to decoding with the pane's encoding.
+/// Returns `None` only if both attempts fail without producing a clean result.
+pub fn decode_bytes_to_string(encoding: PaneEncoding, raw: &[u8]) -> Option<String> {
+    // Try UTF-8 first
+    if let Ok(s) = String::from_utf8(raw.to_vec()) {
+        return Some(s);
+    }
+    // Fall back to the pane encoding
+    let enc = encoding_rs(encoding)?;
+    let (decoded, _, had_errors) = enc.decode(raw);
+    if had_errors {
+        log::trace!(
+            "decode_bytes_to_string: lossy decode with {:?}, some bytes could not be decoded",
+            encoding
+        );
+    }
+    Some(decoded.into_owned())
+}
+
 fn advance_escape(state: EscapeState, byte: u8) -> EscapeState {
     match state {
         EscapeState::Ground => EscapeState::Ground,
@@ -388,5 +409,51 @@ mod tests {
         let encoded = enc.encode(PaneEncoding::Gb18030, input);
         let decoded = dec.decode(PaneEncoding::Gb18030, &encoded);
         assert_eq!(decoded, input.to_vec());
+    }
+
+    #[test]
+    fn decode_bytes_utf8_passthrough() {
+        // Valid UTF-8 bytes should pass through regardless of encoding setting
+        let utf8 = "hello世界".as_bytes();
+        let result = decode_bytes_to_string(PaneEncoding::Gbk, utf8);
+        assert_eq!(result, Some("hello世界".to_string()));
+    }
+
+    #[test]
+    fn decode_bytes_gbk_fallback() {
+        // GBK bytes that are not valid UTF-8 should be decoded using GBK
+        let gbk_bytes: &[u8] = &[0xc4, 0xe3, 0xba, 0xc3]; // "你好" in GBK
+        let result = decode_bytes_to_string(PaneEncoding::Gbk, gbk_bytes);
+        assert_eq!(result, Some("你好".to_string()));
+    }
+
+    #[test]
+    fn decode_bytes_gb18030_fallback() {
+        // GB18030 bytes
+        let gb18030_bytes: &[u8] = &[0xc4, 0xe3, 0xba, 0xc3]; // "你好" in GB18030
+        let result = decode_bytes_to_string(PaneEncoding::Gb18030, gb18030_bytes);
+        assert_eq!(result, Some("你好".to_string()));
+    }
+
+    #[test]
+    fn decode_bytes_utf8_encoding_returns_none_for_invalid() {
+        // Invalid bytes with UTF-8 encoding should return None
+        // (since there is no non-UTF-8 fallback)
+        let invalid: &[u8] = &[0xc4, 0xe3, 0xba, 0xc3]; // GBK bytes, not valid UTF-8
+        let result = decode_bytes_to_string(PaneEncoding::Utf8, invalid);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn decode_bytes_gbk_path_with_slashes() {
+        // Simulate a GBK-encoded path like /home/用户/文档
+        // "用户" in GBK: [0xd3, 0xc3, 0xbb, 0xa7]
+        // "文档" in GBK: [0xce, 0xc4, 0xb5, 0xb5]
+        let mut path = b"/home/".to_vec();
+        path.extend_from_slice(&[0xd3, 0xc3, 0xbb, 0xa7]); // 用户
+        path.push(b'/');
+        path.extend_from_slice(&[0xce, 0xc4, 0xb5, 0xb5]); // 文档
+        let result = decode_bytes_to_string(PaneEncoding::Gbk, &path);
+        assert_eq!(result, Some("/home/用户/文档".to_string()));
     }
 }
