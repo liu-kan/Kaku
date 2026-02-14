@@ -1,7 +1,7 @@
 use crate::commands::CommandDef;
 use config::keyassignment::{
     ClipboardCopyDestination, ClipboardPasteSource, KeyAssignment, KeyTableEntry, KeyTables,
-    MouseEventTrigger, SelectionMode,
+    LauncherActionArgs, LauncherFlags, MouseEventTrigger, SelectionMode,
 };
 use config::{ConfigHandle, MouseEventAltScreen, MouseEventTriggerMods};
 use std::collections::HashMap;
@@ -333,6 +333,24 @@ impl InputMap {
                         button: MouseButton::Left
                     },
                     ExtendSelectionToMouseCursor(SelectionMode::Line)
+                ],
+                [
+                    MouseEventTriggerMods {
+                        mods: Modifiers::NONE,
+                        mouse_reporting: false,
+                        alt_screen: MouseEventAltScreen::Any,
+                    },
+                    MouseEventTrigger::Down {
+                        streak: 1,
+                        button: MouseButton::Right
+                    },
+                    ShowLauncherArgs(LauncherActionArgs {
+                        flags: LauncherFlags::COMMANDS,
+                        title: Some("Pane Actions".to_string()),
+                        help_text: None,
+                        fuzzy_help_text: None,
+                        alphabet: None,
+                    })
                 ],
                 [
                     MouseEventTriggerMods {

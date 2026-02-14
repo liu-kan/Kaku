@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 mod macos;
 
 #[derive(Debug, Clone)]
@@ -14,11 +15,14 @@ impl ToastNotification {
     }
 }
 
-use macos as backend;
-
 pub fn show(notif: ToastNotification) {
-    if let Err(err) = backend::show_notif(notif) {
+    #[cfg(target_os = "macos")]
+    if let Err(err) = macos::show_notif(notif) {
         log::error!("Failed to show notification: {}", err);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        log::info!("Notification: {} - {}", notif.title, notif.message);
     }
 }
 

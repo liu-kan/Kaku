@@ -10,6 +10,7 @@ use anyhow::Error;
 use async_trait::async_trait;
 use config::keyassignment::ScrollbackEraseMode;
 use config::{configuration, ExitBehavior, ExitBehaviorMessaging};
+use config::keyassignment::PaneEncoding;
 use fancy_regex::Regex;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use portable_pty::{Child, ChildKiller, ExitStatus, MasterPty, PtySize};
@@ -22,6 +23,7 @@ use std::convert::TryInto;
 use std::io::{Result as IoResult, Write};
 use std::ops::Range;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 use termwiz::escape::csi::{Sgr, CSI};
 use termwiz::escape::{Action, DeviceControlMode};
@@ -127,6 +129,7 @@ pub struct LocalPane {
     process: Mutex<ProcessState>,
     pty: Mutex<Box<dyn MasterPty>>,
     writer: Mutex<Box<dyn Write + Send>>,
+    encoding: Arc<AtomicU8>,
     domain_id: DomainId,
     tmux_domain: Mutex<Option<Arc<TmuxDomainState>>>,
     proc_list: Mutex<Option<CachedProcInfo>>,
@@ -177,6 +180,18 @@ impl Pane for LocalPane {
         } else {
             self.terminal.lock().get_keyboard_encoding()
         }
+    }
+
+    fn get_encoding(&self) -> PaneEncoding {
+        match self.encoding.load(Ordering::Relaxed) {
+            1 => PaneEncoding::Gbk,
+            2 => PaneEncoding::Gb18030,
+            _ => PaneEncoding::Utf8,
+        }
+    }
+
+    fn set_encoding(&self, encoding: PaneEncoding) {
+        self.encoding.store(encoding as u8, Ordering::Relaxed);
     }
 
     fn get_current_seqno(&self) -> SequenceNo {
@@ -1004,6 +1019,7 @@ impl LocalPane {
         process: Box<dyn Child + Send>,
         pty: Box<dyn MasterPty>,
         writer: Box<dyn Write + Send>,
+        encoding: Arc<AtomicU8>,
         domain_id: DomainId,
         command_description: String,
     ) -> Self {
@@ -1026,6 +1042,7 @@ impl LocalPane {
             }),
             pty: Mutex::new(pty),
             writer: Mutex::new(writer),
+            encoding,
             domain_id,
             tmux_domain: Mutex::new(None),
             proc_list: Mutex::new(None),
