@@ -13,6 +13,7 @@ use smol::channel::{bounded, Receiver as AsyncReceiver};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufWriter, Read, Write};
+use std::sync::atomic::AtomicU8;
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -757,7 +758,9 @@ impl Domain for RemoteSshDomain {
         // eg: tmux integration to be tunnelled via the remote
         // session without duplicating a lot of logic over here.
 
-        let writer = WriterWrapper::new(writer);
+        let initial_encoding = config::configuration().default_encoding;
+        let pane_encoding = Arc::new(AtomicU8::new(initial_encoding as u8));
+        let writer = WriterWrapper::new(writer, Arc::clone(&pane_encoding));
 
         let terminal = wezterm_term::Terminal::new(
             size,
@@ -773,6 +776,7 @@ impl Domain for RemoteSshDomain {
             child,
             pty,
             Box::new(writer),
+            pane_encoding,
             self.id,
             "RemoteSshDomain".to_string(),
         ));

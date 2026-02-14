@@ -11,7 +11,8 @@ use crate::font::{
 };
 use crate::frontend::FrontEndSelection;
 use crate::keyassignment::{
-    KeyAssignment, KeyTable, KeyTableEntry, KeyTables, MouseEventTrigger, SpawnCommand,
+    KeyAssignment, KeyTable, KeyTableEntry, KeyTables, MouseEventTrigger, PaneEncoding,
+    SpawnCommand,
 };
 use crate::keys::{Key, LeaderKey, Mouse};
 use crate::lua::make_lua_context;
@@ -750,6 +751,9 @@ pub struct Config {
     /// mapping annoying in vim :-p
     #[dynamic(default)]
     pub enable_csi_u_key_encoding: bool,
+
+    #[dynamic(default)]
+    pub default_encoding: PaneEncoding,
 
     #[dynamic(default)]
     pub window_close_confirmation: WindowCloseConfirmation,

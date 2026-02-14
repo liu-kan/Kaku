@@ -1,0 +1,9 @@
+# Configuration for the Semantic PR GitHub App
+# https://github.com/Ezard/semantic-prs
+#
+# By default, the app requires either a semantic PR title or ALL commits
+# to follow conventional commits format. Since automated tooling may
+# create non-semantic commits (e.g., "Initial plan"), we configure the
+# check to only validate the PR title. This aligns with the squash-merge
+# workflow where the PR title becomes the final commit message.
+titleOnly: true

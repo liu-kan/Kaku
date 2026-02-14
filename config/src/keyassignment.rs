@@ -170,6 +170,26 @@ impl Default for SpawnTabDomain {
     }
 }
 
+#[derive(
+    Debug, Copy, Clone, Deserialize, Serialize, PartialEq, Eq, FromDynamic, ToDynamic, Default,
+)]
+pub enum PaneEncoding {
+    #[default]
+    Utf8 = 0,
+    Gbk = 1,
+    Gb18030 = 2,
+}
+
+impl std::fmt::Display for PaneEncoding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Utf8 => write!(f, "UTF-8"),
+            Self::Gbk => write!(f, "GBK"),
+            Self::Gb18030 => write!(f, "GB18030"),
+        }
+    }
+}
+
 #[derive(Default, Clone, PartialEq, FromDynamic, ToDynamic)]
 pub struct SpawnCommand {
     /// Optional descriptive label
@@ -197,6 +217,9 @@ pub struct SpawnCommand {
     #[dynamic(default)]
     pub domain: SpawnTabDomain,
 
+    #[dynamic(default)]
+    pub encoding: Option<PaneEncoding>,
+
     pub position: Option<crate::GuiPosition>,
 }
 impl_lua_conversion_dynamic!(SpawnCommand);
@@ -223,6 +246,9 @@ impl std::fmt::Display for SpawnCommand {
         for (k, v) in &self.set_environment_variables {
             write!(fmt, " {}={}", k, v)?;
         }
+        if let Some(encoding) = &self.encoding {
+            write!(fmt, " encoding={encoding}")?;
+        }
         Ok(())
     }
 }
@@ -242,11 +268,10 @@ impl SpawnCommand {
         let mut args = vec![];
         let mut set_environment_variables = HashMap::new();
         for arg in cmd.get_argv() {
-            args.push(
-                arg.to_str()
-                    .ok_or_else(|| anyhow::anyhow!("command argument is not utf8"))?
-                    .to_string(),
-            );
+            // Use lossy conversion instead of hard-failing so that
+            // non-UTF-8 paths (e.g. GBK filenames on Linux) don't
+            // prevent spawning.
+            args.push(arg.to_string_lossy().into_owned());
         }
         for (k, v) in cmd.iter_full_env_as_str() {
             set_environment_variables.insert(k.to_string(), v.to_string());
@@ -261,6 +286,7 @@ impl SpawnCommand {
             args: if args.is_empty() { None } else { Some(args) },
             set_environment_variables,
             cwd,
+            encoding: None,
             position: None,
         })
     }
@@ -598,6 +624,7 @@ pub enum KeyAssignment {
     ActivatePaneByIndex(usize),
     TogglePaneZoomState,
     SetPaneZoomState(bool),
+    SetPaneEncoding(PaneEncoding),
     CloseCurrentPane {
         confirm: bool,
     },
@@ -733,4 +760,19 @@ pub struct KeyTables {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyTableEntry {
     pub action: KeyAssignment,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PaneEncoding, SpawnCommand};
+
+    #[test]
+    fn pane_encoding_default_is_utf8() {
+        assert_eq!(PaneEncoding::default(), PaneEncoding::Utf8);
+    }
+
+    #[test]
+    fn spawn_command_default_has_no_explicit_encoding() {
+        assert_eq!(SpawnCommand::default().encoding, None);
+    }
 }

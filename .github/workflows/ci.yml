@@ -101,3 +101,12 @@ jobs:
 
           lipo -info target/universal/release/kaku
           lipo -info target/universal/release/kaku-gui
+
+      - name: Upload aarch64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kaku-aarch64-apple-darwin
+          path: |
+            target/aarch64-apple-darwin/release/kaku
+            target/aarch64-apple-darwin/release/kaku-gui
+          retention-days: 7

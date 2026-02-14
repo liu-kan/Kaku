@@ -1,12 +1,10 @@
 #![cfg(target_os = "macos")]
-#![allow(clippy::borrow_interior_mutable_const)]
-#![allow(clippy::declare_interior_mutable_const)]
 use crate::ToastNotification;
 use block2::{Block, RcBlock};
 use objc2::rc::Retained;
 use objc2::runtime::{Bool, NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{define_class, msg_send, AllocAnyThread};
-use objc2_foundation::{ns_string, NSArray, NSDictionary, NSError, NSSet, NSString};
+use objc2_foundation::{ns_string, NSArray, NSBundle, NSDictionary, NSError, NSSet, NSString};
 use objc2_user_notifications::{
     UNAuthorizationOptions, UNMutableNotificationContent, UNNotification, UNNotificationAction,
     UNNotificationActionOptions, UNNotificationCategory, UNNotificationCategoryOptions,
@@ -95,13 +93,45 @@ impl Drop for NotifDelegate {
     }
 }
 
-const CENTER: LazyLock<Retained<UNUserNotificationCenter>> =
-    LazyLock::new(UNUserNotificationCenter::currentNotificationCenter);
+/// Returns `true` if the process is running inside a proper macOS `.app` bundle
+/// with a bundle identifier. `UNUserNotificationCenter` requires this; calling
+/// `currentNotificationCenter` without a bundle crashes with
+/// `NSInternalInconsistencyException: bundleProxyForCurrentProcess is nil`.
+fn has_bundle_identifier() -> bool {
+    let bundle = NSBundle::mainBundle();
+    bundle.bundleIdentifier().is_some()
+}
+
+/// Wrapper to allow `Retained<UNUserNotificationCenter>` in a `static`.
+/// `Retained` contains `UnsafeCell` so it is not `Sync` by default, but
+/// `UNUserNotificationCenter` is thread-safe per Apple documentation and
+/// is designed to be called from any thread.
+struct SyncCenter(Option<Retained<UNUserNotificationCenter>>);
+
+// SAFETY: UNUserNotificationCenter is thread-safe per Apple documentation.
+// Both Send and Sync are required for LazyLock<T> in a static.
+unsafe impl Send for SyncCenter {}
+unsafe impl Sync for SyncCenter {}
+
+static CENTER: LazyLock<SyncCenter> = LazyLock::new(|| {
+    if has_bundle_identifier() {
+        SyncCenter(Some(UNUserNotificationCenter::currentNotificationCenter()))
+    } else {
+        log::warn!(
+            "Not running inside a macOS .app bundle; \
+             toast notifications are disabled."
+        );
+        SyncCenter(None)
+    }
+});
 
 pub fn initialize() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        CENTER.requestAuthorizationWithOptions_completionHandler(
+        let Some(center) = CENTER.0.as_ref() else {
+            return;
+        };
+        center.requestAuthorizationWithOptions_completionHandler(
             UNAuthorizationOptions::Alert
                 | UNAuthorizationOptions::Provisional
                 | UNAuthorizationOptions::Sound,
@@ -127,15 +157,15 @@ pub fn initialize() {
                 &NSArray::from_slice(&[]),
                 UNNotificationCategoryOptions::CustomDismissAction,
             );
-        CENTER.setNotificationCategories(&NSSet::from_retained_slice(&[show_url_cat]));
+        center.setNotificationCategories(&NSSet::from_retained_slice(&[show_url_cat]));
 
         let delegate = NotifDelegate::new();
         let delegate_proto = ProtocolObject::from_retained(delegate.clone());
-        CENTER.setDelegate(Some(&delegate_proto));
+        center.setDelegate(Some(&delegate_proto));
         log::debug!(
             "after setDelegate {:?}, center.delegate={:?}",
             delegate,
-            CENTER.delegate()
+            center.delegate()
         );
 
         // Intentionally "leak" the delegate.
@@ -151,8 +181,16 @@ pub fn initialize() {
 
 pub fn show_notif(toast: ToastNotification) -> Result<(), Box<dyn std::error::Error>> {
     initialize();
+    let Some(center) = CENTER.0.as_ref() else {
+        log::debug!(
+            "Skipping notification (no app bundle): {} - {}",
+            toast.title,
+            toast.message
+        );
+        return Ok(());
+    };
     unsafe {
-        log::debug!("show_notif center.delegate is {:?}", CENTER.delegate());
+        log::debug!("show_notif center.delegate is {:?}", center.delegate());
 
         let notif = UNMutableNotificationContent::new();
         notif.setTitle(&NSString::from_str(&toast.title));
@@ -175,23 +213,21 @@ pub fn show_notif(toast: ToastNotification) -> Result<(), Box<dyn std::error::Er
             None,
         );
 
-        CENTER.addNotificationRequest_withCompletionHandler(
+        center.addNotificationRequest_withCompletionHandler(
             &*request,
             Some(&RcBlock::new(move |err: *mut NSError| {
                 if err.is_null() {
                     if let Some(timeout) = toast.timeout {
-                        // Spawn a thread to wait. This could be more efficient.
-                        // We cannot simply use performSelector:withObject:afterDelay:
-                        // because we're not guaranteed to be called from the main
-                        // thread.  We also don't have access to the executor machinery
-                        // from the window crate here, so we just do this basic take.
                         let identifier = identifier.clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(timeout);
-                            // Remove this notification
-                            let ident_array =
-                                NSArray::from_retained_slice(&[NSString::from_str(&identifier)]);
-                            CENTER.removeDeliveredNotificationsWithIdentifiers(&ident_array);
+                            if let Some(center) = CENTER.0.as_ref() {
+                                let ident_array =
+                                    NSArray::from_retained_slice(&[NSString::from_str(
+                                        &identifier,
+                                    )]);
+                                center.removeDeliveredNotificationsWithIdentifiers(&ident_array);
+                            }
                         });
                     }
                 } else {

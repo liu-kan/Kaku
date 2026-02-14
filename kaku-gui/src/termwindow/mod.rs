@@ -3190,6 +3190,9 @@ impl TermWindow {
                 };
                 tab.set_zoomed(*zoomed);
             }
+            SetPaneEncoding(encoding) => {
+                pane.set_encoding(*encoding);
+            }
             SwitchWorkspaceRelative(delta) => {
                 let mux = Mux::get();
                 let workspace = mux.active_workspace();
