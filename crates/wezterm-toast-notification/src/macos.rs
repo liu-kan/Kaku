@@ -1,6 +1,4 @@
 #![cfg(target_os = "macos")]
-#![allow(clippy::borrow_interior_mutable_const)]
-#![allow(clippy::declare_interior_mutable_const)]
 use crate::ToastNotification;
 use block2::{Block, RcBlock};
 use objc2::rc::Retained;
@@ -100,11 +98,11 @@ impl Drop for NotifDelegate {
 /// `currentNotificationCenter` without a bundle crashes with
 /// `NSInternalInconsistencyException: bundleProxyForCurrentProcess is nil`.
 fn has_bundle_identifier() -> bool {
-    let bundle = unsafe { NSBundle::mainBundle() };
+    let bundle = NSBundle::mainBundle();
     bundle.bundleIdentifier().is_some()
 }
 
-const CENTER: LazyLock<Option<Retained<UNUserNotificationCenter>>> = LazyLock::new(|| {
+static CENTER: LazyLock<Option<Retained<UNUserNotificationCenter>>> = LazyLock::new(|| {
     if has_bundle_identifier() {
         Some(UNUserNotificationCenter::currentNotificationCenter())
     } else {
