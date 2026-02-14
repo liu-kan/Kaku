@@ -183,9 +183,9 @@ pub enum PaneEncoding {
 impl std::fmt::Display for PaneEncoding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Utf8 => write!(f, "utf8"),
-            Self::Gbk => write!(f, "gbk"),
-            Self::Gb18030 => write!(f, "gb18030"),
+            Self::Utf8 => write!(f, "UTF-8"),
+            Self::Gbk => write!(f, "GBK"),
+            Self::Gb18030 => write!(f, "GB18030"),
         }
     }
 }

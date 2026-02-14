@@ -154,6 +154,9 @@ impl PaneInputEncoder {
                     }
 
                     output.push(b'?');
+                    log::trace!(
+                        "pane input encoder: replaced invalid UTF-8 byte(s) with '?'"
+                    );
                     cursor += err.error_len().unwrap_or(1);
                 }
             }
