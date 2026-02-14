@@ -102,22 +102,31 @@ fn has_bundle_identifier() -> bool {
     bundle.bundleIdentifier().is_some()
 }
 
-static CENTER: LazyLock<Option<Retained<UNUserNotificationCenter>>> = LazyLock::new(|| {
+/// Wrapper to allow `Retained<UNUserNotificationCenter>` in a `static`.
+/// `Retained` contains `UnsafeCell` so it is not `Sync` by default, but
+/// `UNUserNotificationCenter` is thread-safe per Apple documentation and
+/// is designed to be called from any thread.
+struct SyncCenter(Option<Retained<UNUserNotificationCenter>>);
+
+// SAFETY: UNUserNotificationCenter is thread-safe per Apple documentation.
+unsafe impl Sync for SyncCenter {}
+
+static CENTER: LazyLock<SyncCenter> = LazyLock::new(|| {
     if has_bundle_identifier() {
-        Some(UNUserNotificationCenter::currentNotificationCenter())
+        SyncCenter(Some(UNUserNotificationCenter::currentNotificationCenter()))
     } else {
         log::warn!(
             "Not running inside a macOS .app bundle; \
              toast notifications are disabled."
         );
-        None
+        SyncCenter(None)
     }
 });
 
 pub fn initialize() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let Some(center) = CENTER.as_ref() else {
+        let Some(center) = CENTER.0.as_ref() else {
             return;
         };
         center.requestAuthorizationWithOptions_completionHandler(
@@ -170,7 +179,7 @@ pub fn initialize() {
 
 pub fn show_notif(toast: ToastNotification) -> Result<(), Box<dyn std::error::Error>> {
     initialize();
-    let Some(center) = CENTER.as_ref() else {
+    let Some(center) = CENTER.0.as_ref() else {
         log::debug!(
             "Skipping notification (no app bundle): {} - {}",
             toast.title,
@@ -210,7 +219,7 @@ pub fn show_notif(toast: ToastNotification) -> Result<(), Box<dyn std::error::Er
                         let identifier = identifier.clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(timeout);
-                            if let Some(center) = CENTER.as_ref() {
+                            if let Some(center) = CENTER.0.as_ref() {
                                 let ident_array =
                                     NSArray::from_retained_slice(&[NSString::from_str(
                                         &identifier,
