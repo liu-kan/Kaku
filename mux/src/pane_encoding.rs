@@ -33,9 +33,9 @@ fn encoding_rs(encoding: PaneEncoding) -> Option<&'static Encoding> {
 /// falls back to decoding with the pane's encoding.
 /// Returns `None` only if both attempts fail without producing a clean result.
 pub fn decode_bytes_to_string(encoding: PaneEncoding, raw: &[u8]) -> Option<String> {
-    // Try UTF-8 first
-    if let Ok(s) = String::from_utf8(raw.to_vec()) {
-        return Some(s);
+    // Try UTF-8 first (validate without allocating)
+    if let Ok(s) = std::str::from_utf8(raw) {
+        return Some(s.to_owned());
     }
     // Fall back to the pane encoding
     let enc = encoding_rs(encoding)?;

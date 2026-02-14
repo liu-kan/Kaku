@@ -1177,12 +1177,10 @@ impl Mux {
                         // Try UTF-8 first; if that fails, fall back to the
                         // pane's encoding so that GBK/GB18030 paths from
                         // OSC 7 can be decoded correctly.
-                        String::from_utf8(raw_bytes.clone()).ok().or_else(|| {
-                            let encoding = pane.get_encoding();
-                            crate::pane_encoding::decode_bytes_to_string(
-                                encoding, &raw_bytes,
-                            )
-                        })
+                        let encoding = pane.get_encoding();
+                        crate::pane_encoding::decode_bytes_to_string(
+                            encoding, &raw_bytes,
+                        )
                     })
                     .map(|path| {
                         // On Windows the file URI can produce a path like:
