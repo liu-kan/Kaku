@@ -6,6 +6,7 @@
 //! of an ssh session somewhere.
 
 use crate::localpane::LocalPane;
+use crate::pane_encoding::PaneInputEncoder;
 use crate::pane::{alloc_pane_id, Pane, PaneId};
 use crate::tab::{SplitRequest, Tab, TabId};
 use crate::window::WindowId;
@@ -22,6 +23,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use wezterm_term::TerminalSize;
 
 static DOMAIN_ID: ::std::sync::atomic::AtomicUsize = ::std::sync::atomic::AtomicUsize::new(0);
@@ -84,12 +86,12 @@ pub trait Domain: Downcast + Send + Sync {
             None => anyhow::bail!("Invalid tab id {}", tab),
         };
 
-        let pane_index = match tab
+        let (pane_index, source_encoding) = match tab
             .iter_panes_ignoring_zoom()
             .iter()
             .find(|p| p.pane.pane_id() == pane_id)
         {
-            Some(p) => p.index,
+            Some(p) => (p.index, p.pane.get_encoding()),
             None => anyhow::bail!("invalid pane id {}", pane_id),
         };
 
@@ -103,8 +105,9 @@ pub trait Domain: Downcast + Send + Sync {
                 command,
                 command_dir,
             } => {
-                self.spawn_pane(split_size.second, command, command_dir)
-                    .await?
+                let pane = self.spawn_pane(split_size.second, command, command_dir).await?;
+                pane.set_encoding(source_encoding);
+                pane
             }
             SplitSource::MovePane(src_pane_id) => {
                 let (_domain, _window, src_tab) = mux
@@ -333,6 +336,7 @@ impl LocalDomain {
                 args: if args.is_empty() { None } else { Some(args) },
                 set_environment_variables,
                 cwd,
+                encoding: None,
                 position: None,
             };
 
@@ -496,19 +500,38 @@ impl LocalDomain {
 #[derive(Clone)]
 pub(crate) struct WriterWrapper {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    encoding: Arc<AtomicU8>,
+    input_encoder: Arc<Mutex<PaneInputEncoder>>,
 }
 
 impl WriterWrapper {
-    pub fn new(writer: Box<dyn Write + Send>) -> Self {
+    pub fn new(writer: Box<dyn Write + Send>, encoding: Arc<AtomicU8>) -> Self {
         Self {
             writer: Arc::new(Mutex::new(writer)),
+            encoding,
+            input_encoder: Arc::new(Mutex::new(PaneInputEncoder::default())),
+        }
+    }
+
+    pub fn set_encoding(&self, encoding: config::keyassignment::PaneEncoding) {
+        self.encoding.store(encoding as u8, Ordering::Relaxed);
+    }
+
+    pub fn get_encoding(&self) -> config::keyassignment::PaneEncoding {
+        match self.encoding.load(Ordering::Relaxed) {
+            1 => config::keyassignment::PaneEncoding::Gbk,
+            2 => config::keyassignment::PaneEncoding::Gb18030,
+            _ => config::keyassignment::PaneEncoding::Utf8,
         }
     }
 }
 
 impl std::io::Write for WriterWrapper {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.writer.lock().write(buf)
+        let encoding = self.get_encoding();
+        let encoded = self.input_encoder.lock().encode(encoding, buf);
+        self.writer.lock().write_all(&encoded)?;
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -616,7 +639,9 @@ impl Domain for LocalDomain {
             self.name
         );
         let child_result = pair.slave.spawn_command(cmd);
-        let mut writer = WriterWrapper::new(pair.master.take_writer()?);
+        let initial_encoding = config::configuration().default_encoding;
+        let pane_encoding = Arc::new(AtomicU8::new(initial_encoding as u8));
+        let mut writer = WriterWrapper::new(pair.master.take_writer()?, Arc::clone(&pane_encoding));
 
         let mut terminal = wezterm_term::Terminal::new(
             size,
@@ -636,6 +661,7 @@ impl Domain for LocalDomain {
                 child,
                 pair.master,
                 Box::new(writer),
+                pane_encoding,
                 self.id,
                 command_description,
             )),
@@ -652,6 +678,7 @@ impl Domain for LocalDomain {
                         inner: Mutex::new(pair.master),
                     }),
                     Box::new(writer),
+                    pane_encoding,
                     self.id,
                     command_description,
                 ))

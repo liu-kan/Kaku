@@ -342,6 +342,24 @@ impl InputMap {
                     },
                     MouseEventTrigger::Down {
                         streak: 1,
+                        button: MouseButton::Right
+                    },
+                    ShowLauncherArgs(LauncherActionArgs {
+                        flags: LauncherFlags::COMMANDS,
+                        title: Some("Pane Menu".to_string()),
+                        help_text: None,
+                        fuzzy_help_text: None,
+                        alphabet: None,
+                    })
+                ],
+                [
+                    MouseEventTriggerMods {
+                        mods: Modifiers::NONE,
+                        mouse_reporting: false,
+                        alt_screen: MouseEventAltScreen::Any,
+                    },
+                    MouseEventTrigger::Down {
+                        streak: 1,
                         button: MouseButton::Middle
                     },
                     PasteFrom(ClipboardPasteSource::PrimarySelection)

@@ -1088,6 +1088,14 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &[],
             icon: Some("md_fullscreen"),
         },
+        SetPaneEncoding(encoding) => CommandDef {
+            brief: format!("Set Pane Encoding to {encoding:?}").into(),
+            doc: format!("Sets the current pane encoding to {encoding:?}").into(),
+            keys: vec![],
+            args: &[ArgType::ActivePane],
+            menubar: &["Shell", "Pane Encoding"],
+            icon: None,
+        },
         EmitEvent(name) => CommandDef {
             brief: format!("Emit event `{name}`").into(),
             doc: format!(
@@ -2077,6 +2085,9 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         CloseCurrentPane { confirm: true },
         DetachDomain(SpawnTabDomain::CurrentPaneDomain),
         ResetTerminal,
+        SetPaneEncoding(PaneEncoding::Utf8),
+        SetPaneEncoding(PaneEncoding::Gbk),
+        SetPaneEncoding(PaneEncoding::Gb18030),
         // ----------------- Edit
         #[cfg(not(target_os = "macos"))]
         PasteFrom(ClipboardPasteSource::PrimarySelection),

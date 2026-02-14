@@ -170,6 +170,16 @@ impl Default for SpawnTabDomain {
     }
 }
 
+#[derive(
+    Debug, Copy, Clone, Deserialize, Serialize, PartialEq, Eq, FromDynamic, ToDynamic, Default,
+)]
+pub enum PaneEncoding {
+    #[default]
+    Utf8,
+    Gbk,
+    Gb18030,
+}
+
 #[derive(Default, Clone, PartialEq, FromDynamic, ToDynamic)]
 pub struct SpawnCommand {
     /// Optional descriptive label
@@ -197,6 +207,9 @@ pub struct SpawnCommand {
     #[dynamic(default)]
     pub domain: SpawnTabDomain,
 
+    #[dynamic(default)]
+    pub encoding: Option<PaneEncoding>,
+
     pub position: Option<crate::GuiPosition>,
 }
 impl_lua_conversion_dynamic!(SpawnCommand);
@@ -222,6 +235,9 @@ impl std::fmt::Display for SpawnCommand {
         }
         for (k, v) in &self.set_environment_variables {
             write!(fmt, " {}={}", k, v)?;
+        }
+        if let Some(encoding) = &self.encoding {
+            write!(fmt, " encoding={encoding:?}")?;
         }
         Ok(())
     }
@@ -261,6 +277,7 @@ impl SpawnCommand {
             args: if args.is_empty() { None } else { Some(args) },
             set_environment_variables,
             cwd,
+            encoding: None,
             position: None,
         })
     }
@@ -598,6 +615,7 @@ pub enum KeyAssignment {
     ActivatePaneByIndex(usize),
     TogglePaneZoomState,
     SetPaneZoomState(bool),
+    SetPaneEncoding(PaneEncoding),
     CloseCurrentPane {
         confirm: bool,
     },
@@ -669,6 +687,21 @@ pub enum SplitSize {
 impl Default for SplitSize {
     fn default() -> Self {
         Self::Percent(50)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PaneEncoding, SpawnCommand};
+
+    #[test]
+    fn pane_encoding_default_is_utf8() {
+        assert_eq!(PaneEncoding::default(), PaneEncoding::Utf8);
+    }
+
+    #[test]
+    fn spawn_command_default_has_no_explicit_encoding() {
+        assert_eq!(SpawnCommand::default().encoding, None);
     }
 }
 
