@@ -190,6 +190,7 @@ struct LauncherState {
     selection: String,
     always_fuzzy: bool,
     back_action: Option<KeyAssignment>,
+    ignore_initial_mouse_event: bool,
 }
 
 impl LauncherState {
@@ -560,6 +561,9 @@ impl LauncherState {
     fn run_loop(&mut self, term: &mut TermWizTerminal) -> anyhow::Result<()> {
         while let Ok(Some(event)) = term.poll_input(None) {
             match event {
+                InputEvent::Mouse(_) if self.ignore_initial_mouse_event => {
+                    self.ignore_initial_mouse_event = false;
+                }
                 InputEvent::Key(KeyEvent {
                     key: KeyCode::Char(c),
                     modifiers: Modifiers::NONE,
@@ -738,6 +742,7 @@ pub fn launcher(
         alphabet: args.alphabet.clone(),
         always_fuzzy: filtering,
         back_action,
+        ignore_initial_mouse_event: true,
     };
 
     term.set_raw_mode()?;
