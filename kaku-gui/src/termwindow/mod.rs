@@ -2531,7 +2531,7 @@ impl TermWindow {
             fuzzy_help_text: None,
             alphabet: None,
         };
-        self.show_launcher_impl(args, active_tab_idx);
+        self.show_launcher_impl(args, active_tab_idx, false);
     }
 
     fn show_launcher(&mut self) {
@@ -2547,10 +2547,15 @@ impl TermWindow {
             fuzzy_help_text: None,
             alphabet: None,
         };
-        self.show_launcher_impl(args, 0);
+        self.show_launcher_impl(args, 0, false);
     }
 
-    fn show_launcher_impl(&mut self, args: LauncherActionArgs, initial_choice_idx: usize) {
+    fn show_launcher_impl(
+        &mut self,
+        args: LauncherActionArgs,
+        initial_choice_idx: usize,
+        pane_scoped: bool,
+    ) {
         let mux_window_id = self.mux_window_id;
         let window = self.window.as_ref().unwrap().clone();
 
@@ -2601,7 +2606,18 @@ impl TermWindow {
             let win = window.clone();
             win.notify(TermWindowNotif::Apply(Box::new(move |term_window| {
                 let mux = Mux::get();
-                if let Some(tab) = mux.get_tab(tab_id) {
+                if pane_scoped {
+                    if let Some(pane) = mux.get_pane(pane_id) {
+                        let window = window.clone();
+                        let (overlay, future) =
+                            start_overlay_pane(term_window, &pane, move |_pane_id, term| {
+                                launcher(args, term, window, initial_choice_idx)
+                            });
+
+                        term_window.assign_overlay_for_pane(pane_id, overlay);
+                        promise::spawn::spawn(future).detach();
+                    }
+                } else if let Some(tab) = mux.get_tab(tab_id) {
                     let window = window.clone();
                     let (overlay, future) =
                         start_overlay(term_window, &tab, move |_tab_id, term| {
@@ -2967,7 +2983,7 @@ impl TermWindow {
                     fuzzy_help_text: args.fuzzy_help_text.clone(),
                     alphabet: args.alphabet.clone(),
                 };
-                self.show_launcher_impl(args, 0);
+                self.show_launcher_impl(args, 0, true);
             }
             HideApplication => {
                 let con = Connection::get().expect("call on gui thread");
