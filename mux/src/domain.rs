@@ -6,8 +6,8 @@
 //! of an ssh session somewhere.
 
 use crate::localpane::LocalPane;
-use crate::pane_encoding::PaneInputEncoder;
 use crate::pane::{alloc_pane_id, Pane, PaneId};
+use crate::pane_encoding::PaneInputEncoder;
 use crate::tab::{SplitRequest, Tab, TabId};
 use crate::window::WindowId;
 use crate::Mux;
@@ -22,8 +22,8 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use wezterm_term::TerminalSize;
 
 static DOMAIN_ID: ::std::sync::atomic::AtomicUsize = ::std::sync::atomic::AtomicUsize::new(0);
@@ -105,7 +105,9 @@ pub trait Domain: Downcast + Send + Sync {
                 command,
                 command_dir,
             } => {
-                let pane = self.spawn_pane(split_size.second, command, command_dir).await?;
+                let pane = self
+                    .spawn_pane(split_size.second, command, command_dir)
+                    .await?;
                 pane.set_encoding(source_encoding);
                 pane
             }

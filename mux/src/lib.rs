@@ -1172,15 +1172,12 @@ impl Mux {
                 Some(pane) if pane.domain_id() == target_domain => pane
                     .get_current_working_dir(policy)
                     .and_then(|url| {
-                        let raw_bytes: Vec<u8> =
-                            percent_decode_str(url.path()).collect();
+                        let raw_bytes: Vec<u8> = percent_decode_str(url.path()).collect();
                         // Try UTF-8 first; if that fails, fall back to the
                         // pane's encoding so that GBK/GB18030 paths from
                         // OSC 7 can be decoded correctly.
                         let encoding = pane.get_encoding();
-                        crate::pane_encoding::decode_bytes_to_string(
-                            encoding, &raw_bytes,
-                        )
+                        crate::pane_encoding::decode_bytes_to_string(encoding, &raw_bytes)
                     })
                     .map(|path| {
                         // On Windows the file URI can produce a path like:

@@ -175,9 +175,7 @@ impl PaneInputEncoder {
                     }
 
                     output.push(b'?');
-                    log::trace!(
-                        "pane input encoder: replaced invalid UTF-8 byte(s) with '?'"
-                    );
+                    log::trace!("pane input encoder: replaced invalid UTF-8 byte(s) with '?'");
                     cursor += err.error_len().unwrap_or(1);
                 }
             }
@@ -336,8 +334,8 @@ mod tests {
         let mut dec = PaneOutputDecoder::default();
         // GBK "你" + CSI sequence + GBK "好"
         let mut data: Vec<u8> = vec![0xc4, 0xe3]; // "你" in GBK
-        data.extend_from_slice(b"\x1b[0m");        // SGR reset
-        data.extend_from_slice(&[0xba, 0xc3]);     // "好" in GBK
+        data.extend_from_slice(b"\x1b[0m"); // SGR reset
+        data.extend_from_slice(&[0xba, 0xc3]); // "好" in GBK
         let result = dec.decode(PaneEncoding::Gbk, &data);
         let mut expected = "你".as_bytes().to_vec();
         expected.extend_from_slice(b"\x1b[0m");
