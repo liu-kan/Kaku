@@ -1089,8 +1089,8 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             icon: Some("md_fullscreen"),
         },
         SetPaneEncoding(encoding) => CommandDef {
-            brief: format!("Set Pane Encoding to {encoding:?}").into(),
-            doc: format!("Sets the current pane encoding to {encoding:?}").into(),
+            brief: format!("Set Pane Encoding to {encoding}").into(),
+            doc: format!("Sets the current pane encoding to {encoding}").into(),
             keys: vec![],
             args: &[ArgType::ActivePane],
             menubar: &["Shell", "Pane Encoding"],

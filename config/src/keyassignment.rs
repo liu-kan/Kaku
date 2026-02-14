@@ -180,6 +180,16 @@ pub enum PaneEncoding {
     Gb18030,
 }
 
+impl std::fmt::Display for PaneEncoding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Utf8 => write!(f, "utf8"),
+            Self::Gbk => write!(f, "gbk"),
+            Self::Gb18030 => write!(f, "gb18030"),
+        }
+    }
+}
+
 #[derive(Default, Clone, PartialEq, FromDynamic, ToDynamic)]
 pub struct SpawnCommand {
     /// Optional descriptive label
@@ -237,7 +247,7 @@ impl std::fmt::Display for SpawnCommand {
             write!(fmt, " {}={}", k, v)?;
         }
         if let Some(encoding) = &self.encoding {
-            write!(fmt, " encoding={encoding:?}")?;
+            write!(fmt, " encoding={encoding}")?;
         }
         Ok(())
     }

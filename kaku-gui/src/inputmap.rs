@@ -346,7 +346,7 @@ impl InputMap {
                     },
                     ShowLauncherArgs(LauncherActionArgs {
                         flags: LauncherFlags::COMMANDS,
-                        title: Some("Pane Menu".to_string()),
+                        title: Some("Pane Actions".to_string()),
                         help_text: None,
                         fuzzy_help_text: None,
                         alphabet: None,

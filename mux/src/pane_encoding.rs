@@ -12,6 +12,8 @@ enum EscapeState {
     DcsEsc,
 }
 
+const MAX_TRAILING_ENCODED_BYTES: usize = 4;
+
 impl Default for EscapeState {
     fn default() -> Self {
         Self::Ground
@@ -229,9 +231,14 @@ impl PaneOutputDecoder {
             return;
         };
 
-        for split in (1..=pending.len()).rev() {
-            if let Some(text) = enc.decode_without_bom_handling_and_without_replacement(&pending[..split])
-            {
+        let min_prefix = pending
+            .len()
+            .saturating_sub(MAX_TRAILING_ENCODED_BYTES)
+            .max(1);
+        for split in (min_prefix..=pending.len()).rev() {
+            let decoded_prefix =
+                enc.decode_without_bom_handling_and_without_replacement(&pending[..split]);
+            if let Some(text) = decoded_prefix {
                 output.extend_from_slice(text.as_bytes());
                 if split < pending.len() {
                     self.pending_encoded.extend_from_slice(&pending[split..]);
@@ -240,7 +247,7 @@ impl PaneOutputDecoder {
             }
         }
 
-        if pending.len() <= 4 {
+        if pending.len() <= MAX_TRAILING_ENCODED_BYTES {
             self.pending_encoded.extend_from_slice(&pending);
             return;
         }
