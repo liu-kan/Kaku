@@ -109,6 +109,8 @@ fn has_bundle_identifier() -> bool {
 struct SyncCenter(Option<Retained<UNUserNotificationCenter>>);
 
 // SAFETY: UNUserNotificationCenter is thread-safe per Apple documentation.
+// Both Send and Sync are required for LazyLock<T> in a static.
+unsafe impl Send for SyncCenter {}
 unsafe impl Sync for SyncCenter {}
 
 static CENTER: LazyLock<SyncCenter> = LazyLock::new(|| {
