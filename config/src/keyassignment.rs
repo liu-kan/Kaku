@@ -175,9 +175,9 @@ impl Default for SpawnTabDomain {
 )]
 pub enum PaneEncoding {
     #[default]
-    Utf8,
-    Gbk,
-    Gb18030,
+    Utf8 = 0,
+    Gbk = 1,
+    Gb18030 = 2,
 }
 
 impl std::fmt::Display for PaneEncoding {

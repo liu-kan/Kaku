@@ -111,8 +111,6 @@ pub async fn spawn_command_internal(
                 let pane = tab
                     .get_active_pane()
                     .ok_or_else(|| anyhow!("tab to have a pane"))?;
-                let split_encoding = spawn.encoding.unwrap_or_else(|| pane.get_encoding());
-
                 log::trace!("doing split_pane");
                 let (pane, _size) = mux
                     .split_pane(
@@ -128,7 +126,6 @@ pub async fn spawn_command_internal(
                     .await
                     .context("split_pane")?;
                 pane.set_config(term_config);
-                pane.set_encoding(split_encoding);
             } else {
                 bail!("there is no active tab while splitting pane!?");
             }

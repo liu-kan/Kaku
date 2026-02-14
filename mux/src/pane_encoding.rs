@@ -23,8 +23,22 @@ impl Default for EscapeState {
 fn encoding_rs(encoding: PaneEncoding) -> Option<&'static Encoding> {
     match encoding {
         PaneEncoding::Utf8 => None,
-        PaneEncoding::Gbk => Encoding::for_label(b"gbk"),
-        PaneEncoding::Gb18030 => Encoding::for_label(b"gb18030"),
+        PaneEncoding::Gbk => {
+            let enc = Encoding::for_label(b"gbk");
+            if enc.is_none() {
+                log::error!("encoding_rs: Encoding::for_label(\"gbk\") returned None unexpectedly");
+            }
+            enc
+        }
+        PaneEncoding::Gb18030 => {
+            let enc = Encoding::for_label(b"gb18030");
+            if enc.is_none() {
+                log::error!(
+                    "encoding_rs: Encoding::for_label(\"gb18030\") returned None unexpectedly"
+                );
+            }
+            enc
+        }
     }
 }
 
@@ -51,7 +65,10 @@ pub fn decode_bytes_to_string(encoding: PaneEncoding, raw: &[u8]) -> Option<Stri
 
 fn advance_escape(state: EscapeState, byte: u8) -> EscapeState {
     match state {
-        EscapeState::Ground => EscapeState::Ground,
+        // This function is only called when `state != Ground` (see callers
+        // in PaneInputEncoder::encode and PaneOutputDecoder::decode).
+        // Reaching this arm would indicate a bug in the caller.
+        EscapeState::Ground => unreachable!("advance_escape called in Ground state"),
         EscapeState::Esc => match byte {
             b'[' => EscapeState::Csi,
             b']' => EscapeState::Osc,
