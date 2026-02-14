@@ -1667,6 +1667,16 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["Shell"],
             icon: None,
         },
+        ShowLauncherArgs(args) if args.flags.contains(LauncherFlags::PANE_ENCODINGS) => {
+            CommandDef {
+                brief: "Pane Encoding".into(),
+                doc: "Choose an encoding for the current pane".into(),
+                keys: vec![],
+                args: &[ArgType::ActivePane],
+                menubar: &["Shell", "Pane Encoding"],
+                icon: None,
+            }
+        }
         ShowLauncherArgs(_) | ShowLauncher => CommandDef {
             brief: "Show the launcher".into(),
             doc: "Shows the launcher menu".into(),
@@ -2088,6 +2098,9 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         SetPaneEncoding(PaneEncoding::Utf8),
         SetPaneEncoding(PaneEncoding::Gbk),
         SetPaneEncoding(PaneEncoding::Gb18030),
+        SetPaneEncoding(PaneEncoding::Big5),
+        SetPaneEncoding(PaneEncoding::ShiftJis),
+        SetPaneEncoding(PaneEncoding::EucKr),
         // ----------------- Edit
         #[cfg(not(target_os = "macos"))]
         PasteFrom(ClipboardPasteSource::PrimarySelection),

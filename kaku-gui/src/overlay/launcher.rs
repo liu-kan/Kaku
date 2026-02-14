@@ -11,7 +11,9 @@ use crate::overlay::quickselect;
 use crate::overlay::selector::{matcher_pattern, matcher_score};
 use crate::termwindow::TermWindowNotif;
 use config::configuration;
-use config::keyassignment::{KeyAssignment, SpawnCommand, SpawnTabDomain};
+use config::keyassignment::{
+    KeyAssignment, LauncherActionArgs, PaneEncoding, SpawnCommand, SpawnTabDomain,
+};
 use mux::domain::{DomainId, DomainState};
 use mux::pane::PaneId;
 use mux::termwiztermtab::TermWizTerminal;
@@ -304,8 +306,27 @@ impl LauncherState {
             });
         }
 
+        if args.flags.contains(LauncherFlags::PANE_ENCODINGS) {
+            for encoding in [
+                PaneEncoding::Utf8,
+                PaneEncoding::Gbk,
+                PaneEncoding::Gb18030,
+                PaneEncoding::Big5,
+                PaneEncoding::ShiftJis,
+                PaneEncoding::EucKr,
+            ] {
+                let action = KeyAssignment::SetPaneEncoding(encoding);
+                let label = derive_command_from_key_assignment(&action)
+                    .map(|cmd| format!("{}. {}", cmd.brief, cmd.doc))
+                    .unwrap_or_else(|| format!("Set Pane Encoding to {encoding}"));
+
+                self.entries.push(Entry { label, action });
+            }
+        }
+
         if args.flags.contains(LauncherFlags::COMMANDS) {
             let commands = crate::commands::CommandDef::expanded_commands(&config);
+            let mut has_pane_encoding = false;
             for cmd in commands {
                 if matches!(
                     &cmd.action,
@@ -314,10 +335,28 @@ impl LauncherState {
                     // Filter out some noisy, repetitive entries
                     continue;
                 }
+                if matches!(&cmd.action, KeyAssignment::SetPaneEncoding(_)) {
+                    has_pane_encoding = true;
+                    continue;
+                }
                 self.entries.push(Entry {
                     label: format!("{}. {}", cmd.brief, cmd.doc),
                     action: cmd.action,
                 });
+            }
+
+            if has_pane_encoding {
+                let action = KeyAssignment::ShowLauncherArgs(LauncherActionArgs {
+                    flags: LauncherFlags::PANE_ENCODINGS,
+                    title: Some("Pane Encoding".to_string()),
+                    help_text: None,
+                    fuzzy_help_text: None,
+                    alphabet: None,
+                });
+                let label = derive_command_from_key_assignment(&action)
+                    .map(|cmd| format!("{}. {}", cmd.brief, cmd.doc))
+                    .unwrap_or_else(|| "Pane Encoding".to_string());
+                self.entries.push(Entry { label, action });
             }
         }
 

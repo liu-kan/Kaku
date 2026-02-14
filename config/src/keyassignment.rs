@@ -34,6 +34,7 @@ bitflags::bitflags! {
         const KEY_ASSIGNMENTS = 16;
         const WORKSPACES = 32;
         const COMMANDS = 64;
+        const PANE_ENCODINGS = 128;
     }
 }
 
@@ -73,6 +74,9 @@ impl ToString for LauncherFlags {
         if self.contains(Self::COMMANDS) {
             s.push("COMMANDS");
         }
+        if self.contains(Self::PANE_ENCODINGS) {
+            s.push("PANE_ENCODINGS");
+        }
         s.join("|")
     }
 }
@@ -92,6 +96,7 @@ impl TryFrom<String> for LauncherFlags {
                 "KEY_ASSIGNMENTS" => flags |= Self::KEY_ASSIGNMENTS,
                 "WORKSPACES" => flags |= Self::WORKSPACES,
                 "COMMANDS" => flags |= Self::COMMANDS,
+                "PANE_ENCODINGS" => flags |= Self::PANE_ENCODINGS,
                 _ => {
                     return Err(format!("invalid LauncherFlags `{}` in `{}`", ele, s));
                 }
@@ -178,6 +183,9 @@ pub enum PaneEncoding {
     Utf8 = 0,
     Gbk = 1,
     Gb18030 = 2,
+    Big5 = 3,
+    ShiftJis = 4,
+    EucKr = 5,
 }
 
 impl std::fmt::Display for PaneEncoding {
@@ -186,6 +194,9 @@ impl std::fmt::Display for PaneEncoding {
             Self::Utf8 => write!(f, "UTF-8"),
             Self::Gbk => write!(f, "GBK"),
             Self::Gb18030 => write!(f, "GB18030"),
+            Self::Big5 => write!(f, "Big5"),
+            Self::ShiftJis => write!(f, "Shift-JIS"),
+            Self::EucKr => write!(f, "EUC-KR"),
         }
     }
 }

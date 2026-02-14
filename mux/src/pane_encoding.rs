@@ -27,6 +27,9 @@ fn get_encoding(encoding: PaneEncoding) -> Option<&'static Encoding> {
         PaneEncoding::Utf8 => None,
         PaneEncoding::Gbk => Some(encoding_rs::GBK),
         PaneEncoding::Gb18030 => Some(encoding_rs::GB18030),
+        PaneEncoding::Big5 => Some(encoding_rs::BIG5),
+        PaneEncoding::ShiftJis => Some(encoding_rs::SHIFT_JIS),
+        PaneEncoding::EucKr => Some(encoding_rs::EUC_KR),
     }
 }
 
@@ -412,6 +415,36 @@ mod tests {
         let input = "你好世界".as_bytes();
         let encoded = enc.encode(PaneEncoding::Gb18030, input);
         let decoded = dec.decode(PaneEncoding::Gb18030, &encoded);
+        assert_eq!(decoded, input.to_vec());
+    }
+
+    #[test]
+    fn big5_encode_decode() {
+        let mut enc = PaneInputEncoder::default();
+        let mut dec = PaneOutputDecoder::default();
+        let input = "繁體中文".as_bytes();
+        let encoded = enc.encode(PaneEncoding::Big5, input);
+        let decoded = dec.decode(PaneEncoding::Big5, &encoded);
+        assert_eq!(decoded, input.to_vec());
+    }
+
+    #[test]
+    fn shift_jis_encode_decode() {
+        let mut enc = PaneInputEncoder::default();
+        let mut dec = PaneOutputDecoder::default();
+        let input = "こんにちは".as_bytes();
+        let encoded = enc.encode(PaneEncoding::ShiftJis, input);
+        let decoded = dec.decode(PaneEncoding::ShiftJis, &encoded);
+        assert_eq!(decoded, input.to_vec());
+    }
+
+    #[test]
+    fn euc_kr_encode_decode() {
+        let mut enc = PaneInputEncoder::default();
+        let mut dec = PaneOutputDecoder::default();
+        let input = "안녕하세요".as_bytes();
+        let encoded = enc.encode(PaneEncoding::EucKr, input);
+        let decoded = dec.decode(PaneEncoding::EucKr, &encoded);
         assert_eq!(decoded, input.to_vec());
     }
 
