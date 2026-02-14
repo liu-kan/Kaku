@@ -20,39 +20,28 @@ impl Default for EscapeState {
     }
 }
 
-fn encoding_rs(encoding: PaneEncoding) -> Option<&'static Encoding> {
+/// Returns the `encoding_rs` encoding for the given `PaneEncoding`,
+/// or `None` for UTF-8 (which needs no transcoding).
+fn get_encoding(encoding: PaneEncoding) -> Option<&'static Encoding> {
     match encoding {
         PaneEncoding::Utf8 => None,
-        PaneEncoding::Gbk => {
-            let enc = Encoding::for_label(b"gbk");
-            if enc.is_none() {
-                log::error!("encoding_rs: Encoding::for_label(\"gbk\") returned None unexpectedly");
-            }
-            enc
-        }
-        PaneEncoding::Gb18030 => {
-            let enc = Encoding::for_label(b"gb18030");
-            if enc.is_none() {
-                log::error!(
-                    "encoding_rs: Encoding::for_label(\"gb18030\") returned None unexpectedly"
-                );
-            }
-            enc
-        }
+        PaneEncoding::Gbk => Some(encoding_rs::GBK),
+        PaneEncoding::Gb18030 => Some(encoding_rs::GB18030),
     }
 }
 
 /// Decode raw bytes into a UTF-8 string using the given pane encoding.
 /// First tries UTF-8; if that fails and the encoding is non-UTF-8,
-/// falls back to decoding with the pane's encoding.
-/// Returns `None` only if both attempts fail without producing a clean result.
+/// falls back to lossy decoding with the pane's encoding (replacement
+/// characters may be inserted for undecodable bytes).
+/// Returns `None` if the encoding is UTF-8 and the bytes are not valid UTF-8.
 pub fn decode_bytes_to_string(encoding: PaneEncoding, raw: &[u8]) -> Option<String> {
     // Try UTF-8 first (validate without allocating)
     if let Ok(s) = std::str::from_utf8(raw) {
         return Some(s.to_owned());
     }
     // Fall back to the pane encoding
-    let enc = encoding_rs(encoding)?;
+    let enc = get_encoding(encoding)?;
     let (decoded, _, had_errors) = enc.decode(raw);
     if had_errors {
         log::trace!(
@@ -200,7 +189,7 @@ impl PaneInputEncoder {
     }
 
     fn push_encoded(&self, encoding: PaneEncoding, text: &str, output: &mut Vec<u8>) {
-        if let Some(enc) = encoding_rs(encoding) {
+        if let Some(enc) = get_encoding(encoding) {
             let (encoded, _, _) = enc.encode(text);
             output.extend_from_slice(&encoded);
         } else {
@@ -265,7 +254,7 @@ impl PaneOutputDecoder {
     fn decode_text(&mut self, encoding: PaneEncoding, input: &[u8], output: &mut Vec<u8>) {
         let mut pending = std::mem::take(&mut self.pending_encoded);
         pending.extend_from_slice(input);
-        let Some(enc) = encoding_rs(encoding) else {
+        let Some(enc) = get_encoding(encoding) else {
             output.extend_from_slice(&pending);
             return;
         };

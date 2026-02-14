@@ -22,7 +22,13 @@ pub fn show(notif: ToastNotification) {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        log::info!("Notification: {} - {}", notif.title, notif.message);
+        log::debug!(
+            "Notification (no-op backend): title={:?}, message={:?}, url={:?}, timeout={:?}",
+            notif.title,
+            notif.message,
+            notif.url,
+            notif.timeout
+        );
     }
 }
 
