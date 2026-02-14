@@ -1667,7 +1667,14 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["Shell"],
             icon: None,
         },
-        ShowLauncherArgs(args) if args.flags.contains(LauncherFlags::PANE_ENCODINGS) => {
+        ShowLauncherArgs(args)
+            if {
+                let mut remaining_flags = args.flags;
+                remaining_flags.remove(LauncherFlags::PANE_ENCODINGS);
+                remaining_flags.remove(LauncherFlags::FUZZY);
+                args.flags.contains(LauncherFlags::PANE_ENCODINGS) && remaining_flags.is_empty()
+            } =>
+        {
             CommandDef {
                 brief: "Pane Encoding".into(),
                 doc: "Choose an encoding for the current pane".into(),
