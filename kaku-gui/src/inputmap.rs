@@ -3,7 +3,9 @@ use config::keyassignment::{
     ClipboardCopyDestination, ClipboardPasteSource, KeyAssignment, KeyTableEntry, KeyTables,
     LauncherActionArgs, LauncherFlags, MouseEventTrigger, ScrollbackEraseMode, SelectionMode,
 };
-use config::{ConfigHandle, DeferredKeyCode, KeyNoAction, MouseEventAltScreen, MouseEventTriggerMods};
+use config::{
+    ConfigHandle, DeferredKeyCode, KeyNoAction, MouseEventAltScreen, MouseEventTriggerMods,
+};
 use std::collections::HashMap;
 use std::time::Duration;
 use wezterm_term::input::MouseButton;
