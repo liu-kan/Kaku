@@ -216,6 +216,10 @@ impl PaneEncoding {
         PaneEncoding::ShiftJis,
     ];
 
+    /// Convert a numeric value to a `PaneEncoding` variant.
+    /// Values correspond to the discriminants of the enum
+    /// (0 = Utf8, 1 = Gbk, 2 = Gb18030, 3 = Big5, 4 = ShiftJis,
+    /// 5 = EucKr).  Unknown values default to `Utf8`.
     pub fn from_u8(val: u8) -> PaneEncoding {
         match val {
             1 => PaneEncoding::Gbk,
@@ -971,20 +975,19 @@ mod tests {
 
     #[test]
     fn ordered_list_no_duplicates() {
+        use std::collections::HashSet;
         for &enc in &PaneEncoding::DEFAULT_ORDER {
             reset_last_selected();
             PaneEncoding::set_last_selected(enc);
             let list = PaneEncoding::ordered_list();
-            for (i, a) in list.iter().enumerate() {
-                for (j, b) in list.iter().enumerate() {
-                    if i != j {
-                        assert_ne!(
-                            a, b,
-                            "duplicate {:?} at positions {} and {} after selecting {:?}",
-                            a, i, j, enc
-                        );
-                    }
-                }
+            let mut seen = HashSet::new();
+            for item in &list {
+                assert!(
+                    seen.insert(*item as u8),
+                    "duplicate {:?} after selecting {:?}",
+                    item,
+                    enc
+                );
             }
         }
     }
