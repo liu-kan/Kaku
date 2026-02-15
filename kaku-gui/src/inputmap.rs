@@ -1,14 +1,12 @@
 use crate::commands::CommandDef;
 use config::keyassignment::{
     ClipboardCopyDestination, ClipboardPasteSource, KeyAssignment, KeyTableEntry, KeyTables,
-    LauncherActionArgs, LauncherFlags, MouseEventTrigger, SelectionMode,
+    LauncherActionArgs, LauncherFlags, MouseEventTrigger, ScrollbackEraseMode, SelectionMode,
 };
-use config::keys::KeyNoAction;
-use config::{ConfigHandle, DeferredKeyCode, MouseEventAltScreen, MouseEventTriggerMods};
+use config::{ConfigHandle, DeferredKeyCode, KeyNoAction, MouseEventAltScreen, MouseEventTriggerMods};
 use std::collections::HashMap;
 use std::time::Duration;
 use wezterm_term::input::MouseButton;
-use wezterm_term::ScrollbackEraseMode;
 use window::{KeyCode, Modifiers, PhysKeyCode, UIKeyCapRendering};
 
 pub struct InputMap {
