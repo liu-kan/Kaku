@@ -39,6 +39,15 @@ impl Connection {
             let delegate = create_app_delegate();
             let () = msg_send![ns_app, setDelegate: delegate];
 
+            // Complete the NSApplication launch sequence now so that the
+            // main CFRunLoop Mach port sources (including Input Method Kit)
+            // are registered before any window or view is created.
+            // Without this, IMK logs "error messaging the mach port for
+            // IMKCFRunLoopWakeUpReliable" when interpretKeyEvents: is
+            // called from a window created before [NSApp run].
+            // [NSApp run] will skip finishLaunching if it was already called.
+            let () = msg_send![ns_app, finishLaunching];
+
             let conn = Self {
                 ns_app,
                 windows: RefCell::new(HashMap::new()),
