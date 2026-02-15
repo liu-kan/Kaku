@@ -202,7 +202,12 @@ impl Pane for LocalPane {
         // The command is pure ASCII, which is identical in every
         // supported encoding, so writing through the encoding wrapper
         // is safe.
-        let _ = self.writer.lock().write_all(cmd.as_bytes());
+        if let Err(err) = self.writer.lock().write_all(cmd.as_bytes()) {
+            log::warn!(
+                "set_encoding: failed to send locale command to shell: {err:#}; \
+                 you may need to run 'export LANG={lang}' manually"
+            );
+        }
     }
 
     fn get_current_seqno(&self) -> SequenceNo {
