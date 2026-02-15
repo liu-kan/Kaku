@@ -3,10 +3,12 @@ use config::keyassignment::{
     ClipboardCopyDestination, ClipboardPasteSource, KeyAssignment, KeyTableEntry, KeyTables,
     LauncherActionArgs, LauncherFlags, MouseEventTrigger, SelectionMode,
 };
-use config::{ConfigHandle, MouseEventAltScreen, MouseEventTriggerMods};
+use config::keys::KeyNoAction;
+use config::{ConfigHandle, DeferredKeyCode, MouseEventAltScreen, MouseEventTriggerMods};
 use std::collections::HashMap;
 use std::time::Duration;
 use wezterm_term::input::MouseButton;
+use wezterm_term::ScrollbackEraseMode;
 use window::{KeyCode, Modifiers, PhysKeyCode, UIKeyCapRendering};
 
 pub struct InputMap {
@@ -82,6 +84,97 @@ impl InputMap {
                 keys.default
                     .entry((code, mods))
                     .or_insert(KeyTableEntry { action });
+            }
+
+            // Kaku-specific macOS keybindings that involve SendKey or compound
+            // actions (not representable in CommandDef).
+            #[cfg(target_os = "macos")]
+            {
+                let kaku_bindings: Vec<(Modifiers, KeyCode, KeyAssignment)> = vec![
+                    // Cmd+R: clear screen + scrollback
+                    (
+                        Modifiers::SUPER,
+                        KeyCode::Char('r'),
+                        Multiple(vec![
+                            SendKey(KeyNoAction {
+                                key: DeferredKeyCode::KeyCode(KeyCode::Char('l')),
+                                mods: Modifiers::CTRL,
+                            }),
+                            ClearScrollback(ScrollbackEraseMode::ScrollbackAndViewport),
+                        ]),
+                    ),
+                    // Alt+Left: word jump left
+                    (
+                        Modifiers::ALT,
+                        KeyCode::LeftArrow,
+                        SendKey(KeyNoAction {
+                            key: DeferredKeyCode::KeyCode(KeyCode::Char('b')),
+                            mods: Modifiers::ALT,
+                        }),
+                    ),
+                    // Alt+Right: word jump right
+                    (
+                        Modifiers::ALT,
+                        KeyCode::RightArrow,
+                        SendKey(KeyNoAction {
+                            key: DeferredKeyCode::KeyCode(KeyCode::Char('f')),
+                            mods: Modifiers::ALT,
+                        }),
+                    ),
+                    // Cmd+Left: line start
+                    (
+                        Modifiers::SUPER,
+                        KeyCode::LeftArrow,
+                        SendKey(KeyNoAction {
+                            key: DeferredKeyCode::KeyCode(KeyCode::Char('a')),
+                            mods: Modifiers::CTRL,
+                        }),
+                    ),
+                    // Cmd+Right: line end
+                    (
+                        Modifiers::SUPER,
+                        KeyCode::RightArrow,
+                        SendKey(KeyNoAction {
+                            key: DeferredKeyCode::KeyCode(KeyCode::Char('e')),
+                            mods: Modifiers::CTRL,
+                        }),
+                    ),
+                    // Cmd+Backspace: delete to line start
+                    (
+                        Modifiers::SUPER,
+                        KeyCode::Char('\u{8}'),
+                        SendKey(KeyNoAction {
+                            key: DeferredKeyCode::KeyCode(KeyCode::Char('u')),
+                            mods: Modifiers::CTRL,
+                        }),
+                    ),
+                    // Alt+Backspace: delete word
+                    (
+                        Modifiers::ALT,
+                        KeyCode::Char('\u{8}'),
+                        SendKey(KeyNoAction {
+                            key: DeferredKeyCode::KeyCode(KeyCode::Char('w')),
+                            mods: Modifiers::CTRL,
+                        }),
+                    ),
+                    // Cmd+Enter: newline without execute
+                    (
+                        Modifiers::SUPER,
+                        KeyCode::Char('\r'),
+                        SendString("\n".to_string()),
+                    ),
+                    // Shift+Enter: newline without execute
+                    (
+                        Modifiers::SHIFT,
+                        KeyCode::Char('\r'),
+                        SendString("\n".to_string()),
+                    ),
+                ];
+                for (mods, code, action) in kaku_bindings {
+                    keys.default
+                        .entry((code, mods))
+                        .or_insert(KeyTableEntry { action });
+                }
             }
         }
 
