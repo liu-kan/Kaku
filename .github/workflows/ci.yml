@@ -109,4 +109,4 @@ jobs:
           path: |
             target/aarch64-apple-darwin/release/kaku
             target/aarch64-apple-darwin/release/kaku-gui
-          retention-days: 7
+          retention-days: 2

@@ -53,6 +53,7 @@ Kaku comes with intuitive macOS-native shortcuts:
 | Smart Jump | `z <dir>` |
 | Smart Select | `z -l <dir>` |
 | Recent Dirs | `z -t` |
+| Context Menu | Right-click on any Pane (includes encoding switch, config reload, etc.) |
 
 ## Configuration
 
@@ -64,6 +65,7 @@ Kaku comes with a carefully curated suite of CLI tools, pre-configured for immed
 - **zsh-completions**: Extended command and subcommand completion definitions.
 - **Syntax Highlighting**: Real-time command validation and coloring.
 - **Autosuggestions**: Intelligent, history-based completions similar to Fish shell.
+- **Integrated CJK Encoding Switch**: Real-time switching between common CJK encodings on a per-pane basis, works with both local and remote SSH shells.
 
 Kaku uses `~/.config/kaku/kaku.lua` for configuration, fully compatible with WezTerm's Lua API, with built-in defaults at `Kaku.app/Contents/Resources/kaku.lua` as fallback.
 
@@ -94,11 +96,15 @@ Achieved through aggressive stripping of unused features, lazy loading of color 
 
 1. **Why is the Homebrew cask named `kakuku` instead of `kaku`?**
 
-   The name `kaku` conflicts with another package in Homebrew's official repository (an unmaintained music player). `kakuku` is a cute variation that's easy to remember.
+   The name `kaku` conflicts with another package in Homebrew's official repository (an unmaintained music player). Users updating would get that conflicting package instead. `kakuku` is a cute variation that's easy to remember.
 
 2. **Is there a Windows or Linux version?**
 
    Not at the moment. Kaku is currently macOS-only while we focus on polishing the macOS experience. Windows and Linux versions may come later once the macOS version is mature.
+
+3. **Can Kaku use transparent windows on macOS?**
+
+   Yes. You can set `window_background_opacity` and optionally `macos_window_background_blur` in `~/.config/kaku/kaku.lua`. Transparent mode now keeps top/right/bottom padding regions visually consistent to avoid transparent gaps.
 
 ## Support
 
