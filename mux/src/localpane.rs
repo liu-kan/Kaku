@@ -185,6 +185,9 @@ impl Pane for LocalPane {
         match self.encoding.load(Ordering::Relaxed) {
             1 => PaneEncoding::Gbk,
             2 => PaneEncoding::Gb18030,
+            3 => PaneEncoding::Big5,
+            4 => PaneEncoding::ShiftJis,
+            5 => PaneEncoding::EucKr,
             _ => PaneEncoding::Utf8,
         }
     }

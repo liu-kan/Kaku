@@ -519,6 +519,9 @@ impl WriterWrapper {
         match self.encoding.load(Ordering::Relaxed) {
             1 => config::keyassignment::PaneEncoding::Gbk,
             2 => config::keyassignment::PaneEncoding::Gb18030,
+            3 => config::keyassignment::PaneEncoding::Big5,
+            4 => config::keyassignment::PaneEncoding::ShiftJis,
+            5 => config::keyassignment::PaneEncoding::EucKr,
             _ => config::keyassignment::PaneEncoding::Utf8,
         }
     }

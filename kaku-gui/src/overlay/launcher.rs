@@ -11,7 +11,9 @@ use crate::overlay::quickselect;
 use crate::overlay::selector::{matcher_pattern, matcher_score};
 use crate::termwindow::TermWindowNotif;
 use config::configuration;
-use config::keyassignment::{KeyAssignment, SpawnCommand, SpawnTabDomain};
+use config::keyassignment::{
+    KeyAssignment, LauncherActionArgs, PaneEncoding, SpawnCommand, SpawnTabDomain,
+};
 use mux::domain::{DomainId, DomainState};
 use mux::pane::PaneId;
 use mux::termwiztermtab::TermWizTerminal;
@@ -187,6 +189,8 @@ struct LauncherState {
     alphabet: String,
     selection: String,
     always_fuzzy: bool,
+    back_action: Option<KeyAssignment>,
+    ignore_initial_mouse_event: bool,
 }
 
 impl LauncherState {
@@ -304,6 +308,24 @@ impl LauncherState {
             });
         }
 
+        if args.flags.contains(LauncherFlags::PANE_ENCODINGS) {
+            for encoding in [
+                PaneEncoding::Utf8,
+                PaneEncoding::Gbk,
+                PaneEncoding::Gb18030,
+                PaneEncoding::Big5,
+                PaneEncoding::ShiftJis,
+                PaneEncoding::EucKr,
+            ] {
+                let action = KeyAssignment::SetPaneEncoding(encoding);
+                let label = derive_command_from_key_assignment(&action)
+                    .map(|cmd| format!("{}. {}", cmd.brief, cmd.doc))
+                    .unwrap_or_else(|| format!("Set Pane Encoding to {encoding}"));
+
+                self.entries.push(Entry { label, action });
+            }
+        }
+
         if args.flags.contains(LauncherFlags::COMMANDS) {
             let commands = crate::commands::CommandDef::expanded_commands(&config);
             for cmd in commands {
@@ -314,11 +336,26 @@ impl LauncherState {
                     // Filter out some noisy, repetitive entries
                     continue;
                 }
+                if matches!(&cmd.action, KeyAssignment::SetPaneEncoding(_)) {
+                    continue;
+                }
                 self.entries.push(Entry {
                     label: format!("{}. {}", cmd.brief, cmd.doc),
                     action: cmd.action,
                 });
             }
+
+            let action = KeyAssignment::ShowLauncherArgs(LauncherActionArgs {
+                flags: LauncherFlags::PANE_ENCODINGS,
+                title: Some("Pane Encoding".to_string()),
+                help_text: None,
+                fuzzy_help_text: None,
+                alphabet: None,
+            });
+            let label = derive_command_from_key_assignment(&action)
+                .map(|cmd| format!("{}. {}", cmd.brief, cmd.doc))
+                .unwrap_or_else(|| "Pane Encoding".to_string());
+            self.entries.insert(0, Entry { label, action });
         }
 
         // Grab interesting key assignments and show those as a kind of command palette
@@ -489,6 +526,9 @@ impl LauncherState {
     }
 
     fn move_up(&mut self) {
+        if self.filtered_entries.is_empty() {
+            return;
+        }
         self.active_idx = self.active_idx.saturating_sub(1);
         if self.active_idx < self.top_row {
             self.top_row = self.active_idx;
@@ -496,15 +536,34 @@ impl LauncherState {
     }
 
     fn move_down(&mut self) {
+        if self.filtered_entries.is_empty() {
+            return;
+        }
         self.active_idx = (self.active_idx + 1).min(self.filtered_entries.len() - 1);
         if self.active_idx > self.top_row + self.max_items {
             self.top_row = self.active_idx.saturating_sub(self.max_items);
         }
     }
 
+    fn back(&self) -> bool {
+        if let Some(assignment) = self.back_action.clone() {
+            self.window.notify(TermWindowNotif::PerformAssignment {
+                pane_id: self.pane_id,
+                assignment,
+                tx: None,
+            });
+            true
+        } else {
+            false
+        }
+    }
+
     fn run_loop(&mut self, term: &mut TermWizTerminal) -> anyhow::Result<()> {
         while let Ok(Some(event)) = term.poll_input(None) {
             match event {
+                InputEvent::Mouse(_) if self.ignore_initial_mouse_event => {
+                    self.ignore_initial_mouse_event = false;
+                }
                 InputEvent::Key(KeyEvent {
                     key: KeyCode::Char(c),
                     modifiers: Modifiers::NONE,
@@ -571,6 +630,7 @@ impl LauncherState {
                     key: KeyCode::Escape,
                     ..
                 }) => {
+                    self.back();
                     break;
                 }
                 InputEvent::Key(KeyEvent {
@@ -624,6 +684,7 @@ impl LauncherState {
                     }
                     if mouse_buttons != MouseButtons::NONE {
                         // Treat any other mouse button as cancel
+                        self.back();
                         break;
                     }
                 }
@@ -651,6 +712,19 @@ pub fn launcher(
     initial_choice_idx: usize,
 ) -> anyhow::Result<()> {
     let filtering = args.flags.contains(LauncherFlags::FUZZY);
+    let mut submenu_flags = args.flags;
+    submenu_flags.remove(LauncherFlags::FUZZY);
+    let back_action = if submenu_flags == LauncherFlags::PANE_ENCODINGS {
+        Some(KeyAssignment::ShowLauncherArgs(LauncherActionArgs {
+            flags: LauncherFlags::COMMANDS,
+            title: Some("Pane Actions".to_string()),
+            help_text: None,
+            fuzzy_help_text: None,
+            alphabet: None,
+        }))
+    } else {
+        None
+    };
     let mut state = LauncherState {
         active_idx: initial_choice_idx,
         max_items: 0,
@@ -667,6 +741,8 @@ pub fn launcher(
         selection: String::new(),
         alphabet: args.alphabet.clone(),
         always_fuzzy: filtering,
+        back_action,
+        ignore_initial_mouse_event: true,
     };
 
     term.set_raw_mode()?;
