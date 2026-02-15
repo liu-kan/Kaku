@@ -186,7 +186,23 @@ impl Pane for LocalPane {
     }
 
     fn set_encoding(&self, encoding: PaneEncoding) {
-        self.encoding.store(encoding as u8, Ordering::Relaxed);
+        let old = self.encoding.swap(encoding as u8, Ordering::Relaxed);
+        if old == encoding as u8 {
+            return;
+        }
+        // Tell the running shell to change its locale so that it
+        // interprets bytes in the same encoding the terminal now
+        // expects.  Without this, a UTF-8 shell receiving GBK bytes
+        // would display <ffffffff> for every non-ASCII character.
+        let lang = encoding.suggested_lang();
+        let cmd = format!(
+            "export LANG={lang} LC_ALL={lang} 2>/dev/null; \
+             printf '\\033[2J\\033[H'\n"
+        );
+        // The command is pure ASCII, which is identical in every
+        // supported encoding, so writing through the encoding wrapper
+        // is safe.
+        let _ = self.writer.lock().write_all(cmd.as_bytes());
     }
 
     fn get_current_seqno(&self) -> SequenceNo {

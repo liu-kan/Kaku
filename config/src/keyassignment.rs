@@ -202,6 +202,21 @@ impl std::fmt::Display for PaneEncoding {
     }
 }
 
+impl PaneEncoding {
+    /// Return an appropriate LANG value for this encoding so that
+    /// the shell interprets bytes correctly after an encoding switch.
+    pub fn suggested_lang(&self) -> &'static str {
+        match self {
+            Self::Utf8 => "en_US.UTF-8",
+            Self::Gbk => "zh_CN.GBK",
+            Self::Gb18030 => "zh_CN.GB18030",
+            Self::Big5 => "zh_TW.Big5",
+            Self::ShiftJis => "ja_JP.SJIS",
+            Self::EucKr => "ko_KR.EUC-KR",
+        }
+    }
+}
+
 /// Tracks the most recently user-selected pane encoding for dynamic menu reordering.
 static LAST_SELECTED_ENCODING: AtomicU8 = AtomicU8::new(0);
 
@@ -1000,5 +1015,19 @@ mod tests {
         let list = PaneEncoding::ordered_list();
         assert_eq!(list[0], PaneEncoding::Utf8);
         assert_eq!(list[1], PaneEncoding::Big5);
+    }
+
+    #[test]
+    fn suggested_lang_covers_all_encodings() {
+        for &enc in &PaneEncoding::DEFAULT_ORDER {
+            let lang = enc.suggested_lang();
+            assert!(!lang.is_empty(), "{:?} has empty suggested_lang", enc);
+        }
+        assert_eq!(PaneEncoding::Utf8.suggested_lang(), "en_US.UTF-8");
+        assert_eq!(PaneEncoding::Gbk.suggested_lang(), "zh_CN.GBK");
+        assert_eq!(PaneEncoding::Gb18030.suggested_lang(), "zh_CN.GB18030");
+        assert_eq!(PaneEncoding::Big5.suggested_lang(), "zh_TW.Big5");
+        assert_eq!(PaneEncoding::ShiftJis.suggested_lang(), "ja_JP.SJIS");
+        assert_eq!(PaneEncoding::EucKr.suggested_lang(), "ko_KR.EUC-KR");
     }
 }
