@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
 use wezterm_dynamic::{FromDynamic, FromDynamicOptions, ToDynamic, Value};
 use wezterm_input_types::{KeyCode, Modifiers};
 use wezterm_term::input::MouseButton;
@@ -198,6 +199,64 @@ impl std::fmt::Display for PaneEncoding {
             Self::ShiftJis => write!(f, "Shift-JIS"),
             Self::EucKr => write!(f, "EUC-KR"),
         }
+    }
+}
+
+/// Tracks the most recently user-selected pane encoding for dynamic menu reordering.
+static LAST_SELECTED_ENCODING: AtomicU8 = AtomicU8::new(0);
+
+impl PaneEncoding {
+    /// Default encoding order: UTF-8, GBK, GB18030, Big5, EUC-KR, Shift-JIS.
+    pub const DEFAULT_ORDER: [PaneEncoding; 6] = [
+        PaneEncoding::Utf8,
+        PaneEncoding::Gbk,
+        PaneEncoding::Gb18030,
+        PaneEncoding::Big5,
+        PaneEncoding::EucKr,
+        PaneEncoding::ShiftJis,
+    ];
+
+    pub fn from_u8(val: u8) -> PaneEncoding {
+        match val {
+            1 => PaneEncoding::Gbk,
+            2 => PaneEncoding::Gb18030,
+            3 => PaneEncoding::Big5,
+            4 => PaneEncoding::ShiftJis,
+            5 => PaneEncoding::EucKr,
+            _ => PaneEncoding::Utf8,
+        }
+    }
+
+    /// Record the most recently selected encoding for menu reordering.
+    pub fn set_last_selected(encoding: PaneEncoding) {
+        LAST_SELECTED_ENCODING.store(encoding as u8, Ordering::Relaxed);
+    }
+
+    /// Return encodings in display order: UTF-8 always first, the most
+    /// recently selected encoding second, remaining encodings in default
+    /// order.  If the last selection was UTF-8 (or none), no reordering
+    /// is performed.
+    pub fn ordered_list() -> Vec<PaneEncoding> {
+        let last = LAST_SELECTED_ENCODING.load(Ordering::Relaxed);
+        let last_encoding = PaneEncoding::from_u8(last);
+
+        let mut result = Vec::with_capacity(6);
+        result.push(PaneEncoding::Utf8);
+
+        if last_encoding != PaneEncoding::Utf8 {
+            result.push(last_encoding);
+            for &enc in &Self::DEFAULT_ORDER {
+                if enc != PaneEncoding::Utf8 && enc != last_encoding {
+                    result.push(enc);
+                }
+            }
+        } else {
+            for &enc in &Self::DEFAULT_ORDER[1..] {
+                result.push(enc);
+            }
+        }
+
+        result
     }
 }
 
@@ -775,7 +834,13 @@ pub struct KeyTableEntry {
 
 #[cfg(test)]
 mod tests {
-    use super::{PaneEncoding, SpawnCommand};
+    use super::{PaneEncoding, SpawnCommand, LAST_SELECTED_ENCODING};
+    use std::sync::atomic::Ordering;
+
+    /// Reset global state before each ordering test.
+    fn reset_last_selected() {
+        LAST_SELECTED_ENCODING.store(0, Ordering::Relaxed);
+    }
 
     #[test]
     fn pane_encoding_default_is_utf8() {
@@ -785,5 +850,152 @@ mod tests {
     #[test]
     fn spawn_command_default_has_no_explicit_encoding() {
         assert_eq!(SpawnCommand::default().encoding, None);
+    }
+
+    #[test]
+    fn from_u8_round_trip() {
+        for &enc in &PaneEncoding::DEFAULT_ORDER {
+            assert_eq!(PaneEncoding::from_u8(enc as u8), enc);
+        }
+        // Unknown values map to Utf8
+        assert_eq!(PaneEncoding::from_u8(99), PaneEncoding::Utf8);
+    }
+
+    #[test]
+    fn default_order_is_correct() {
+        assert_eq!(
+            PaneEncoding::DEFAULT_ORDER,
+            [
+                PaneEncoding::Utf8,
+                PaneEncoding::Gbk,
+                PaneEncoding::Gb18030,
+                PaneEncoding::Big5,
+                PaneEncoding::EucKr,
+                PaneEncoding::ShiftJis,
+            ]
+        );
+    }
+
+    #[test]
+    fn ordered_list_default_no_selection() {
+        reset_last_selected();
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list.len(), 6);
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list, PaneEncoding::DEFAULT_ORDER);
+    }
+
+    #[test]
+    fn ordered_list_utf8_selected_no_reorder() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Utf8);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list, PaneEncoding::DEFAULT_ORDER);
+    }
+
+    #[test]
+    fn ordered_list_gbk_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Gbk);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Gbk);
+        assert_eq!(list.len(), 6);
+        // Gbk should not appear again after position 1
+        assert!(!list[2..].contains(&PaneEncoding::Gbk));
+    }
+
+    #[test]
+    fn ordered_list_big5_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Big5);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Big5);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::Big5));
+    }
+
+    #[test]
+    fn ordered_list_shift_jis_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::ShiftJis);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::ShiftJis);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::ShiftJis));
+    }
+
+    #[test]
+    fn ordered_list_euc_kr_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::EucKr);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::EucKr);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::EucKr));
+    }
+
+    #[test]
+    fn ordered_list_gb18030_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Gb18030);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Gb18030);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::Gb18030));
+    }
+
+    #[test]
+    fn ordered_list_all_encodings_present() {
+        for &enc in &PaneEncoding::DEFAULT_ORDER {
+            reset_last_selected();
+            PaneEncoding::set_last_selected(enc);
+            let list = PaneEncoding::ordered_list();
+            assert_eq!(list.len(), 6);
+            // Every encoding from DEFAULT_ORDER must appear exactly once
+            for &expected in &PaneEncoding::DEFAULT_ORDER {
+                assert!(
+                    list.contains(&expected),
+                    "ordered_list after selecting {:?} is missing {:?}",
+                    enc,
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ordered_list_no_duplicates() {
+        for &enc in &PaneEncoding::DEFAULT_ORDER {
+            reset_last_selected();
+            PaneEncoding::set_last_selected(enc);
+            let list = PaneEncoding::ordered_list();
+            for (i, a) in list.iter().enumerate() {
+                for (j, b) in list.iter().enumerate() {
+                    if i != j {
+                        assert_ne!(
+                            a, b,
+                            "duplicate {:?} at positions {} and {} after selecting {:?}",
+                            a, i, j, enc
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn set_last_selected_overwrites_previous() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Gbk);
+        PaneEncoding::set_last_selected(PaneEncoding::Big5);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Big5);
     }
 }

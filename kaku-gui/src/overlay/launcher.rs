@@ -309,14 +309,7 @@ impl LauncherState {
         }
 
         if args.flags.contains(LauncherFlags::PANE_ENCODINGS) {
-            for encoding in [
-                PaneEncoding::Utf8,
-                PaneEncoding::Gbk,
-                PaneEncoding::Gb18030,
-                PaneEncoding::Big5,
-                PaneEncoding::ShiftJis,
-                PaneEncoding::EucKr,
-            ] {
+            for encoding in PaneEncoding::ordered_list() {
                 let action = KeyAssignment::SetPaneEncoding(encoding);
                 let label = derive_command_from_key_assignment(&action)
                     .map(|cmd| format!("{}. {}", cmd.brief, cmd.doc))

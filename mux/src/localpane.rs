@@ -182,14 +182,7 @@ impl Pane for LocalPane {
     }
 
     fn get_encoding(&self) -> PaneEncoding {
-        match self.encoding.load(Ordering::Relaxed) {
-            1 => PaneEncoding::Gbk,
-            2 => PaneEncoding::Gb18030,
-            3 => PaneEncoding::Big5,
-            4 => PaneEncoding::ShiftJis,
-            5 => PaneEncoding::EucKr,
-            _ => PaneEncoding::Utf8,
-        }
+        PaneEncoding::from_u8(self.encoding.load(Ordering::Relaxed))
     }
 
     fn set_encoding(&self, encoding: PaneEncoding) {

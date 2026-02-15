@@ -2106,8 +2106,8 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         SetPaneEncoding(PaneEncoding::Gbk),
         SetPaneEncoding(PaneEncoding::Gb18030),
         SetPaneEncoding(PaneEncoding::Big5),
-        SetPaneEncoding(PaneEncoding::ShiftJis),
         SetPaneEncoding(PaneEncoding::EucKr),
+        SetPaneEncoding(PaneEncoding::ShiftJis),
         // ----------------- Edit
         #[cfg(not(target_os = "macos"))]
         PasteFrom(ClipboardPasteSource::PrimarySelection),
