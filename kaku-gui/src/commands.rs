@@ -713,7 +713,11 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         ToggleFullScreen => CommandDef {
             brief: "Toggle full screen mode".into(),
             doc: "Switch between normal and full screen mode".into(),
-            keys: vec![(Modifiers::ALT, "Return".into())],
+            keys: vec![
+                (Modifiers::ALT, "Return".into()),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::CTRL), "f".into()),
+            ],
             args: &[ArgType::ActiveWindow],
             menubar: &["View"],
             icon: Some("md_fullscreen"),
@@ -1501,12 +1505,16 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             doc: "Split the current pane vertically into two panes, by spawning \
             the default program into the bottom half"
                 .into(),
-            keys: vec![(
-                Modifiers::CTRL
-                    .union(Modifiers::ALT)
-                    .union(Modifiers::SHIFT),
-                "'".into(),
-            )],
+            keys: vec![
+                (
+                    Modifiers::CTRL
+                        .union(Modifiers::ALT)
+                        .union(Modifiers::SHIFT),
+                    "'".into(),
+                ),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::SHIFT), "d".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Shell"],
             icon: Some("cod_split_vertical"),
@@ -1519,12 +1527,16 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             doc: "Split the current pane horizontally into two panes, by spawning \
             the default program into the right hand side"
                 .into(),
-            keys: vec![(
-                Modifiers::CTRL
-                    .union(Modifiers::ALT)
-                    .union(Modifiers::SHIFT),
-                "5".into(),
-            )],
+            keys: vec![
+                (
+                    Modifiers::CTRL
+                        .union(Modifiers::ALT)
+                        .union(Modifiers::SHIFT),
+                    "5".into(),
+                ),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER, "d".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Shell"],
             icon: Some("cod_split_horizontal"),
@@ -1552,12 +1564,16 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         AdjustPaneSize(PaneDirection::Left, amount) => CommandDef {
             brief: format!("Resize Pane {amount} cell(s) to the Left").into(),
             doc: "Adjusts the closest split divider to the left".into(),
-            keys: vec![(
-                Modifiers::CTRL
-                    .union(Modifiers::ALT)
-                    .union(Modifiers::SHIFT),
-                "LeftArrow".into(),
-            )],
+            keys: vec![
+                (
+                    Modifiers::CTRL
+                        .union(Modifiers::ALT)
+                        .union(Modifiers::SHIFT),
+                    "LeftArrow".into(),
+                ),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::CTRL), "LeftArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Resize Pane"],
             icon: None,
@@ -1565,12 +1581,16 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         AdjustPaneSize(PaneDirection::Right, amount) => CommandDef {
             brief: format!("Resize Pane {amount} cell(s) to the Right").into(),
             doc: "Adjusts the closest split divider to the right".into(),
-            keys: vec![(
-                Modifiers::CTRL
-                    .union(Modifiers::ALT)
-                    .union(Modifiers::SHIFT),
-                "RightArrow".into(),
-            )],
+            keys: vec![
+                (
+                    Modifiers::CTRL
+                        .union(Modifiers::ALT)
+                        .union(Modifiers::SHIFT),
+                    "RightArrow".into(),
+                ),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::CTRL), "RightArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Resize Pane"],
             icon: None,
@@ -1578,12 +1598,16 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         AdjustPaneSize(PaneDirection::Up, amount) => CommandDef {
             brief: format!("Resize Pane {amount} cell(s) Upwards").into(),
             doc: "Adjusts the closest split divider towards the top".into(),
-            keys: vec![(
-                Modifiers::CTRL
-                    .union(Modifiers::ALT)
-                    .union(Modifiers::SHIFT),
-                "UpArrow".into(),
-            )],
+            keys: vec![
+                (
+                    Modifiers::CTRL
+                        .union(Modifiers::ALT)
+                        .union(Modifiers::SHIFT),
+                    "UpArrow".into(),
+                ),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::CTRL), "UpArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Resize Pane"],
             icon: None,
@@ -1591,12 +1615,16 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         AdjustPaneSize(PaneDirection::Down, amount) => CommandDef {
             brief: format!("Resize Pane {amount} cell(s) Downwards").into(),
             doc: "Adjusts the closest split divider towards the bottom".into(),
-            keys: vec![(
-                Modifiers::CTRL
-                    .union(Modifiers::ALT)
-                    .union(Modifiers::SHIFT),
-                "DownArrow".into(),
-            )],
+            keys: vec![
+                (
+                    Modifiers::CTRL
+                        .union(Modifiers::ALT)
+                        .union(Modifiers::SHIFT),
+                    "DownArrow".into(),
+                ),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::CTRL), "DownArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Resize Pane"],
             icon: None,
@@ -1606,7 +1634,11 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         ActivatePaneDirection(PaneDirection::Left) => CommandDef {
             brief: "Activate Pane Left".into(),
             doc: "Activates the pane to the left of the current pane".into(),
-            keys: vec![(Modifiers::CTRL.union(Modifiers::SHIFT), "LeftArrow".into())],
+            keys: vec![
+                (Modifiers::CTRL.union(Modifiers::SHIFT), "LeftArrow".into()),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::ALT), "LeftArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Select Pane"],
             icon: Some("fa_long_arrow_left"),
@@ -1614,7 +1646,11 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         ActivatePaneDirection(PaneDirection::Right) => CommandDef {
             brief: "Activate Pane Right".into(),
             doc: "Activates the pane to the right of the current pane".into(),
-            keys: vec![(Modifiers::CTRL.union(Modifiers::SHIFT), "RightArrow".into())],
+            keys: vec![
+                (Modifiers::CTRL.union(Modifiers::SHIFT), "RightArrow".into()),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::ALT), "RightArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Select Pane"],
             icon: Some("fa_long_arrow_right"),
@@ -1622,7 +1658,11 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         ActivatePaneDirection(PaneDirection::Up) => CommandDef {
             brief: "Activate Pane Up".into(),
             doc: "Activates the pane to the top of the current pane".into(),
-            keys: vec![(Modifiers::CTRL.union(Modifiers::SHIFT), "UpArrow".into())],
+            keys: vec![
+                (Modifiers::CTRL.union(Modifiers::SHIFT), "UpArrow".into()),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::ALT), "UpArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Select Pane"],
             icon: Some("fa_long_arrow_up"),
@@ -1630,7 +1670,11 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         ActivatePaneDirection(PaneDirection::Down) => CommandDef {
             brief: "Activate Pane Down".into(),
             doc: "Activates the pane to the bottom of the current pane".into(),
-            keys: vec![(Modifiers::CTRL.union(Modifiers::SHIFT), "DownArrow".into())],
+            keys: vec![
+                (Modifiers::CTRL.union(Modifiers::SHIFT), "DownArrow".into()),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::ALT), "DownArrow".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window", "Select Pane"],
             icon: Some("fa_long_arrow_down"),
@@ -1638,7 +1682,11 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
         TogglePaneZoomState => CommandDef {
             brief: "Toggle Pane Zoom".into(),
             doc: "Toggles the zoom state for the current pane".into(),
-            keys: vec![(Modifiers::CTRL.union(Modifiers::SHIFT), "z".into())],
+            keys: vec![
+                (Modifiers::CTRL.union(Modifiers::SHIFT), "z".into()),
+                #[cfg(target_os = "macos")]
+                (Modifiers::SUPER.union(Modifiers::SHIFT), "Return".into()),
+            ],
             args: &[ArgType::ActivePane],
             menubar: &["Window"],
             icon: Some("md_fullscreen"),
