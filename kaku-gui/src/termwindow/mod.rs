@@ -2565,7 +2565,11 @@ impl TermWindow {
             None => return,
         };
 
-        let pane = match self.get_active_pane_or_overlay() {
+        // Use the underlying pane rather than any active overlay so that
+        // chained launcher invocations (e.g. COMMANDS -> PANE_ENCODINGS)
+        // target the real terminal pane whose overlay will already have
+        // been cleaned up by the time the async closure executes.
+        let pane = match tab.get_active_pane() {
             Some(pane) => pane,
             None => return,
         };
