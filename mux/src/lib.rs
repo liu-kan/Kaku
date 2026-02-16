@@ -1,5 +1,6 @@
 use crate::client::{ClientId, ClientInfo};
 use crate::pane::{CachePolicy, Pane, PaneId};
+use crate::pane_encoding::PaneOutputDecoder;
 use crate::ssh_agent::AgentProxy;
 use crate::tab::{SplitRequest, Tab, TabId};
 use crate::window::{Window, WindowId};
@@ -39,6 +40,7 @@ pub mod connui;
 pub mod domain;
 pub mod localpane;
 pub mod pane;
+pub mod pane_encoding;
 pub mod renderable;
 pub mod ssh;
 pub mod ssh_agent;
@@ -282,6 +284,7 @@ fn read_from_pane_pty(
     mut reader: Box<dyn std::io::Read>,
 ) {
     let mut buf = vec![0; BUFSIZE];
+    let mut decoder = PaneOutputDecoder::default();
 
     // This is used to signal that an error occurred either in this thread,
     // or in the main mux thread.  If `true`, this thread will terminate.
@@ -307,9 +310,10 @@ fn read_from_pane_pty(
         }
     };
 
+    let parse_pane = pane.clone();
     std::thread::spawn({
         let dead = Arc::clone(&dead);
-        move || parse_buffered_data(pane, &dead, rx)
+        move || parse_buffered_data(parse_pane, &dead, rx)
     });
 
     if let Some(banner) = banner {
@@ -329,7 +333,12 @@ fn read_from_pane_pty(
             Ok(size) => {
                 histogram!("read_from_pane_pty.bytes.rate").record(size as f64);
                 log::trace!("read_pty pane {pane_id} read {size} bytes");
-                if let Err(err) = tx.write_all(&buf[..size]) {
+                let decoded = if let Some(pane) = pane.upgrade() {
+                    decoder.decode(pane.get_encoding(), &buf[..size])
+                } else {
+                    buf[..size].to_vec()
+                };
+                if let Err(err) = tx.write_all(&decoded) {
                     error!(
                         "read_pty failed to write to parser: pane {} {:?}",
                         pane_id, err
@@ -1163,10 +1172,12 @@ impl Mux {
                 Some(pane) if pane.domain_id() == target_domain => pane
                     .get_current_working_dir(policy)
                     .and_then(|url| {
-                        percent_decode_str(url.path())
-                            .decode_utf8()
-                            .ok()
-                            .map(|path| path.into_owned())
+                        let raw_bytes: Vec<u8> = percent_decode_str(url.path()).collect();
+                        // Try UTF-8 first; if that fails, fall back to the
+                        // pane's encoding so that GBK/GB18030 paths from
+                        // OSC 7 can be decoded correctly.
+                        let encoding = pane.get_encoding();
+                        crate::pane_encoding::decode_bytes_to_string(encoding, &raw_bytes)
                     })
                     .map(|path| {
                         // On Windows the file URI can produce a path like:

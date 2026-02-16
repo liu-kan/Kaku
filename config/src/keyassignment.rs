@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
 use wezterm_dynamic::{FromDynamic, FromDynamicOptions, ToDynamic, Value};
 use wezterm_input_types::{KeyCode, Modifiers};
 use wezterm_term::input::MouseButton;
@@ -34,6 +35,7 @@ bitflags::bitflags! {
         const KEY_ASSIGNMENTS = 16;
         const WORKSPACES = 32;
         const COMMANDS = 64;
+        const PANE_ENCODINGS = 128;
     }
 }
 
@@ -73,6 +75,9 @@ impl ToString for LauncherFlags {
         if self.contains(Self::COMMANDS) {
             s.push("COMMANDS");
         }
+        if self.contains(Self::PANE_ENCODINGS) {
+            s.push("PANE_ENCODINGS");
+        }
         s.join("|")
     }
 }
@@ -92,6 +97,7 @@ impl TryFrom<String> for LauncherFlags {
                 "KEY_ASSIGNMENTS" => flags |= Self::KEY_ASSIGNMENTS,
                 "WORKSPACES" => flags |= Self::WORKSPACES,
                 "COMMANDS" => flags |= Self::COMMANDS,
+                "PANE_ENCODINGS" => flags |= Self::PANE_ENCODINGS,
                 _ => {
                     return Err(format!("invalid LauncherFlags `{}` in `{}`", ele, s));
                 }
@@ -170,6 +176,94 @@ impl Default for SpawnTabDomain {
     }
 }
 
+#[derive(
+    Debug, Copy, Clone, Deserialize, Serialize, PartialEq, Eq, FromDynamic, ToDynamic, Default,
+)]
+pub enum PaneEncoding {
+    #[default]
+    Utf8 = 0,
+    Gbk = 1,
+    Gb18030 = 2,
+    Big5 = 3,
+    ShiftJis = 4,
+    EucKr = 5,
+}
+
+impl std::fmt::Display for PaneEncoding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Utf8 => write!(f, "UTF-8"),
+            Self::Gbk => write!(f, "GBK"),
+            Self::Gb18030 => write!(f, "GB18030"),
+            Self::Big5 => write!(f, "Big5"),
+            Self::ShiftJis => write!(f, "Shift-JIS"),
+            Self::EucKr => write!(f, "EUC-KR"),
+        }
+    }
+}
+
+/// Tracks the most recently user-selected pane encoding for dynamic menu reordering.
+static LAST_SELECTED_ENCODING: AtomicU8 = AtomicU8::new(0);
+
+impl PaneEncoding {
+    /// Default encoding order: UTF-8, GBK, GB18030, Big5, EUC-KR, Shift-JIS.
+    pub const DEFAULT_ORDER: [PaneEncoding; 6] = [
+        PaneEncoding::Utf8,
+        PaneEncoding::Gbk,
+        PaneEncoding::Gb18030,
+        PaneEncoding::Big5,
+        PaneEncoding::EucKr,
+        PaneEncoding::ShiftJis,
+    ];
+
+    /// Convert a numeric value to a `PaneEncoding` variant.
+    /// Values correspond to the discriminants of the enum
+    /// (0 = Utf8, 1 = Gbk, 2 = Gb18030, 3 = Big5, 4 = ShiftJis,
+    /// 5 = EucKr).  Unknown values default to `Utf8`.
+    pub fn from_u8(val: u8) -> PaneEncoding {
+        match val {
+            1 => PaneEncoding::Gbk,
+            2 => PaneEncoding::Gb18030,
+            3 => PaneEncoding::Big5,
+            4 => PaneEncoding::ShiftJis,
+            5 => PaneEncoding::EucKr,
+            _ => PaneEncoding::Utf8,
+        }
+    }
+
+    /// Record the most recently selected encoding for menu reordering.
+    pub fn set_last_selected(encoding: PaneEncoding) {
+        LAST_SELECTED_ENCODING.store(encoding as u8, Ordering::Relaxed);
+    }
+
+    /// Return encodings in display order: UTF-8 always first, the most
+    /// recently selected encoding second, remaining encodings in default
+    /// order.  If the last selection was UTF-8 (or none), no reordering
+    /// is performed.
+    pub fn ordered_list() -> Vec<PaneEncoding> {
+        let last = LAST_SELECTED_ENCODING.load(Ordering::Relaxed);
+        let last_encoding = PaneEncoding::from_u8(last);
+
+        let mut result = Vec::with_capacity(6);
+        result.push(PaneEncoding::Utf8);
+
+        if last_encoding != PaneEncoding::Utf8 {
+            result.push(last_encoding);
+            for &enc in &Self::DEFAULT_ORDER {
+                if enc != PaneEncoding::Utf8 && enc != last_encoding {
+                    result.push(enc);
+                }
+            }
+        } else {
+            for &enc in &Self::DEFAULT_ORDER[1..] {
+                result.push(enc);
+            }
+        }
+
+        result
+    }
+}
+
 #[derive(Default, Clone, PartialEq, FromDynamic, ToDynamic)]
 pub struct SpawnCommand {
     /// Optional descriptive label
@@ -197,6 +291,9 @@ pub struct SpawnCommand {
     #[dynamic(default)]
     pub domain: SpawnTabDomain,
 
+    #[dynamic(default)]
+    pub encoding: Option<PaneEncoding>,
+
     pub position: Option<crate::GuiPosition>,
 }
 impl_lua_conversion_dynamic!(SpawnCommand);
@@ -223,6 +320,9 @@ impl std::fmt::Display for SpawnCommand {
         for (k, v) in &self.set_environment_variables {
             write!(fmt, " {}={}", k, v)?;
         }
+        if let Some(encoding) = &self.encoding {
+            write!(fmt, " encoding={encoding}")?;
+        }
         Ok(())
     }
 }
@@ -242,11 +342,10 @@ impl SpawnCommand {
         let mut args = vec![];
         let mut set_environment_variables = HashMap::new();
         for arg in cmd.get_argv() {
-            args.push(
-                arg.to_str()
-                    .ok_or_else(|| anyhow::anyhow!("command argument is not utf8"))?
-                    .to_string(),
-            );
+            // Use lossy conversion instead of hard-failing so that
+            // non-UTF-8 paths (e.g. GBK filenames on Linux) don't
+            // prevent spawning.
+            args.push(arg.to_string_lossy().into_owned());
         }
         for (k, v) in cmd.iter_full_env_as_str() {
             set_environment_variables.insert(k.to_string(), v.to_string());
@@ -261,6 +360,7 @@ impl SpawnCommand {
             args: if args.is_empty() { None } else { Some(args) },
             set_environment_variables,
             cwd,
+            encoding: None,
             position: None,
         })
     }
@@ -598,6 +698,7 @@ pub enum KeyAssignment {
     ActivatePaneByIndex(usize),
     TogglePaneZoomState,
     SetPaneZoomState(bool),
+    SetPaneEncoding(PaneEncoding),
     CloseCurrentPane {
         confirm: bool,
     },
@@ -633,7 +734,6 @@ pub enum KeyAssignment {
 
     CopyMode(CopyModeAssignment),
     RotatePanes(RotationDirection),
-    TogglePaneSplitDirection,
     SplitPane(SplitPane),
     PaneSelect(PaneSelectArguments),
     CharSelect(CharSelectArguments),
@@ -734,4 +834,171 @@ pub struct KeyTables {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyTableEntry {
     pub action: KeyAssignment,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PaneEncoding, SpawnCommand, LAST_SELECTED_ENCODING};
+    use std::sync::atomic::Ordering;
+
+    /// Reset global state before each ordering test.
+    fn reset_last_selected() {
+        LAST_SELECTED_ENCODING.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn pane_encoding_default_is_utf8() {
+        assert_eq!(PaneEncoding::default(), PaneEncoding::Utf8);
+    }
+
+    #[test]
+    fn spawn_command_default_has_no_explicit_encoding() {
+        assert_eq!(SpawnCommand::default().encoding, None);
+    }
+
+    #[test]
+    fn from_u8_round_trip() {
+        for &enc in &PaneEncoding::DEFAULT_ORDER {
+            assert_eq!(PaneEncoding::from_u8(enc as u8), enc);
+        }
+        // Unknown values map to Utf8
+        assert_eq!(PaneEncoding::from_u8(99), PaneEncoding::Utf8);
+    }
+
+    #[test]
+    fn default_order_is_correct() {
+        assert_eq!(
+            PaneEncoding::DEFAULT_ORDER,
+            [
+                PaneEncoding::Utf8,
+                PaneEncoding::Gbk,
+                PaneEncoding::Gb18030,
+                PaneEncoding::Big5,
+                PaneEncoding::EucKr,
+                PaneEncoding::ShiftJis,
+            ]
+        );
+    }
+
+    #[test]
+    fn ordered_list_default_no_selection() {
+        reset_last_selected();
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list.len(), 6);
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list, PaneEncoding::DEFAULT_ORDER);
+    }
+
+    #[test]
+    fn ordered_list_utf8_selected_no_reorder() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Utf8);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list, PaneEncoding::DEFAULT_ORDER);
+    }
+
+    #[test]
+    fn ordered_list_gbk_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Gbk);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Gbk);
+        assert_eq!(list.len(), 6);
+        // Gbk should not appear again after position 1
+        assert!(!list[2..].contains(&PaneEncoding::Gbk));
+    }
+
+    #[test]
+    fn ordered_list_big5_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Big5);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Big5);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::Big5));
+    }
+
+    #[test]
+    fn ordered_list_shift_jis_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::ShiftJis);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::ShiftJis);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::ShiftJis));
+    }
+
+    #[test]
+    fn ordered_list_euc_kr_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::EucKr);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::EucKr);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::EucKr));
+    }
+
+    #[test]
+    fn ordered_list_gb18030_selected() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Gb18030);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Gb18030);
+        assert_eq!(list.len(), 6);
+        assert!(!list[2..].contains(&PaneEncoding::Gb18030));
+    }
+
+    #[test]
+    fn ordered_list_all_encodings_present() {
+        for &enc in &PaneEncoding::DEFAULT_ORDER {
+            reset_last_selected();
+            PaneEncoding::set_last_selected(enc);
+            let list = PaneEncoding::ordered_list();
+            assert_eq!(list.len(), 6);
+            // Every encoding from DEFAULT_ORDER must appear exactly once
+            for &expected in &PaneEncoding::DEFAULT_ORDER {
+                assert!(
+                    list.contains(&expected),
+                    "ordered_list after selecting {:?} is missing {:?}",
+                    enc,
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ordered_list_no_duplicates() {
+        use std::collections::HashSet;
+        for &enc in &PaneEncoding::DEFAULT_ORDER {
+            reset_last_selected();
+            PaneEncoding::set_last_selected(enc);
+            let list = PaneEncoding::ordered_list();
+            let mut seen = HashSet::new();
+            for item in &list {
+                assert!(
+                    seen.insert(*item as u8),
+                    "duplicate {:?} after selecting {:?}",
+                    item,
+                    enc
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn set_last_selected_overwrites_previous() {
+        reset_last_selected();
+        PaneEncoding::set_last_selected(PaneEncoding::Gbk);
+        PaneEncoding::set_last_selected(PaneEncoding::Big5);
+        let list = PaneEncoding::ordered_list();
+        assert_eq!(list[0], PaneEncoding::Utf8);
+        assert_eq!(list[1], PaneEncoding::Big5);
+    }
 }

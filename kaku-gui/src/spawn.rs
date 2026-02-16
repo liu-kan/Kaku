@@ -58,12 +58,21 @@ pub async fn spawn_command_internal(
     };
 
     let cwd = if let Some(cwd) = spawn.cwd.as_ref() {
-        Some(cwd.to_str().map(|s| s.to_owned()).ok_or_else(|| {
-            anyhow!(
-                "Domain::spawn requires that the cwd be unicode in {:?}",
-                cwd
-            )
-        })?)
+        match cwd.to_str() {
+            Some(s) => Some(s.to_owned()),
+            None => {
+                // On Linux, paths can contain non-UTF-8 bytes (e.g. GBK-encoded
+                // filenames). Use lossy conversion so we don't hard-fail; the
+                // path may still be usable by the shell even with replacement chars.
+                let lossy = cwd.to_string_lossy().into_owned();
+                log::warn!(
+                    "cwd {:?} is not valid UTF-8; using lossy representation: {}",
+                    cwd,
+                    lossy
+                );
+                Some(lossy)
+            }
+        }
     } else {
         None
     };
@@ -102,7 +111,6 @@ pub async fn spawn_command_internal(
                 let pane = tab
                     .get_active_pane()
                     .ok_or_else(|| anyhow!("tab to have a pane"))?;
-
                 log::trace!("doing split_pane");
                 let (pane, _size) = mux
                     .split_pane(
@@ -146,6 +154,11 @@ pub async fn spawn_command_internal(
             if Some(window_id) == src_window_id {
                 pane.set_config(term_config);
             }
+            pane.set_encoding(
+                spawn
+                    .encoding
+                    .unwrap_or_else(|| config::configuration().default_encoding),
+            );
         }
     };
 

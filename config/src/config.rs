@@ -11,7 +11,8 @@ use crate::font::{
 };
 use crate::frontend::FrontEndSelection;
 use crate::keyassignment::{
-    KeyAssignment, KeyTable, KeyTableEntry, KeyTables, MouseEventTrigger, SpawnCommand,
+    KeyAssignment, KeyTable, KeyTableEntry, KeyTables, MouseEventTrigger, PaneEncoding,
+    SpawnCommand,
 };
 use crate::keys::{Key, LeaderKey, Mouse};
 use crate::lua::make_lua_context;
@@ -545,11 +546,6 @@ pub struct Config {
     #[dynamic(default)]
     pub split_pane_gap: u8,
 
-    /// The thickness of the split line in pixels.
-    /// Defaults to 2.0 pixels.
-    #[dynamic(default = "default_split_thickness")]
-    pub split_thickness: f32,
-
     #[dynamic(default)]
     pub window_content_alignment: WindowContentAlignment,
 
@@ -755,6 +751,9 @@ pub struct Config {
     /// mapping annoying in vim :-p
     #[dynamic(default)]
     pub enable_csi_u_key_encoding: bool,
+
+    #[dynamic(default)]
+    pub default_encoding: PaneEncoding,
 
     #[dynamic(default)]
     pub window_close_confirmation: WindowCloseConfirmation,
@@ -1676,10 +1675,6 @@ fn default_pane_select_bg_color() -> RgbaColor {
 
 fn default_pane_select_font_size() -> f64 {
     36.0
-}
-
-fn default_split_thickness() -> f32 {
-    2.0
 }
 
 fn default_integrated_title_buttons() -> Vec<IntegratedTitleButton> {
