@@ -62,6 +62,8 @@
 	<string>An application launched via Kaku requires elevated permission.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>An application launched via Kaku would like to access the local network.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>An application launched via Kaku would like to use Bluetooth.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
