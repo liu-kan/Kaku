@@ -29,7 +29,7 @@ impl crate::TermWindow {
         let pos_y = split.top as f32 * cell_height + first_row_offset + padding_top;
         let pos_x = split.left as f32 * cell_width + padding_left + border.left.get() as f32;
 
-        let split_thickness = 2.0;
+        let split_thickness = self.config.split_thickness;
         let is_horizontal = split.direction == SplitDirection::Horizontal;
 
         // Check if another split crosses this one

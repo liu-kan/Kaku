@@ -545,6 +545,11 @@ pub struct Config {
     #[dynamic(default)]
     pub split_pane_gap: u8,
 
+    /// The thickness of the split line in pixels.
+    /// Defaults to 2.0 pixels.
+    #[dynamic(default = "default_split_thickness")]
+    pub split_thickness: f32,
+
     #[dynamic(default)]
     pub window_content_alignment: WindowContentAlignment,
 
@@ -1671,6 +1676,10 @@ fn default_pane_select_bg_color() -> RgbaColor {
 
 fn default_pane_select_font_size() -> f64 {
     36.0
+}
+
+fn default_split_thickness() -> f32 {
+    2.0
 }
 
 fn default_integrated_title_buttons() -> Vec<IntegratedTitleButton> {
