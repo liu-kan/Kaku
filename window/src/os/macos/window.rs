@@ -3352,12 +3352,19 @@ impl WindowView {
     }
 
     extern "C" fn draw_rect(view: &mut Object, sel: Sel, _dirty_rect: NSRect) {
+        let view_id = view as *mut Object;
         if let Some(this) = Self::get_this(view) {
             // Use try_borrow_mut to avoid panic if already borrowed (e.g., during zoom animation)
             let mut inner = match this.inner.try_borrow_mut() {
                 Ok(inner) => inner,
                 Err(_) => {
-                    // Already borrowed, mark as invalidated and return
+                    // Already borrowed (typically re-entrant from input handling).
+                    // We cannot mutate state here, so request another draw pass;
+                    // otherwise this repaint request can be dropped until the next
+                    // unrelated input event.
+                    unsafe {
+                        let () = msg_send![view_id, setNeedsDisplay: YES];
+                    }
                     return;
                 }
             };

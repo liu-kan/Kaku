@@ -45,11 +45,17 @@ where
 
     let overlay_pane_id = tw_tab.pane_id();
 
-    let future = promise::spawn::spawn_into_new_thread(move || {
-        let res = func(tab_id, tw_term);
-        TermWindow::schedule_cancel_overlay(window, tab_id, Some(overlay_pane_id));
-        res
-    });
+    // Delay spawning the overlay worker thread until after the caller has
+    // attached the overlay pane. Starting too early can render before attach,
+    // leaving the first frame blank until a later input event repaints it.
+    let future = async move {
+        promise::spawn::spawn_into_new_thread(move || {
+            let res = func(tab_id, tw_term);
+            TermWindow::schedule_cancel_overlay(window, tab_id, Some(overlay_pane_id));
+            res
+        })
+        .await
+    };
 
     (tw_tab, Box::pin(future))
 }
@@ -78,14 +84,25 @@ where
     let term_config: Arc<dyn TerminalConfiguration + Send + Sync> =
         Arc::new(config::TermConfig::with_config(term_window.config.clone()));
     let (tw_term, tw_tab) = allocate(size, term_config);
+    let overlay_pane_id = tw_tab.pane_id();
 
     let window = term_window.window.clone().unwrap();
 
-    let future = promise::spawn::spawn_into_new_thread(move || {
-        let res = func(pane_id, tw_term);
-        TermWindow::schedule_cancel_overlay_for_pane(window, pane_id);
-        res
-    });
+    // Delay spawning the overlay worker thread until after the caller has
+    // attached the overlay pane. Starting too early can render before attach,
+    // leaving the first frame blank until a later input event repaints it.
+    let future = async move {
+        promise::spawn::spawn_into_new_thread(move || {
+            let res = func(pane_id, tw_term);
+            TermWindow::schedule_cancel_overlay_for_pane_if_matches(
+                window,
+                pane_id,
+                overlay_pane_id,
+            );
+            res
+        })
+        .await
+    };
 
     (tw_tab, Box::pin(future))
 }

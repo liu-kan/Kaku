@@ -692,6 +692,7 @@ impl LauncherState {
                 _ => {}
             }
             self.render(term)?;
+            self.window.invalidate();
         }
 
         Ok(())
@@ -743,5 +744,6 @@ pub fn launcher(
     state.build_entries(args);
     state.update_filter();
     state.render(&mut term)?;
+    state.window.invalidate();
     state.run_loop(&mut term)
 }

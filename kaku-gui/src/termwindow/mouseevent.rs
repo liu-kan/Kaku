@@ -60,6 +60,23 @@ impl super::TermWindow {
 
     pub fn mouse_event_impl(&mut self, event: MouseEvent, context: &dyn WindowOps) {
         log::trace!("{:?}", event);
+        if matches!(
+            event.kind,
+            WMEK::Press(MousePress::Right) | WMEK::Release(MousePress::Right)
+        ) {
+            super::debug_mouse_menu_log(
+                self.mux_window_id,
+                format!(
+                    "mouse_event {:?} start coords=({}, {}) mouse_buttons={:?} capture={:?} tracked_buttons={:?}",
+                    event.kind,
+                    event.coords.x,
+                    event.coords.y,
+                    event.mouse_buttons,
+                    self.current_mouse_capture,
+                    self.current_mouse_buttons
+                ),
+            );
+        }
         let pane = match self.get_active_pane_or_overlay() {
             Some(pane) => pane,
             None => return,
@@ -126,6 +143,15 @@ impl super::TermWindow {
             WMEK::Release(ref press) => {
                 self.current_mouse_capture = None;
                 self.current_mouse_buttons.retain(|p| p != press);
+                if press == &MousePress::Right {
+                    super::debug_mouse_menu_log(
+                        self.mux_window_id,
+                        format!(
+                            "mouse release right cleared capture/buttons capture={:?} tracked_buttons={:?}",
+                            self.current_mouse_capture, self.current_mouse_buttons
+                        ),
+                    );
+                }
                 if press == &MousePress::Left {
                     let was_dragging_window = self.is_window_dragging;
                     self.is_window_dragging = false;
@@ -176,6 +202,17 @@ impl super::TermWindow {
                 self.last_mouse_click = Some(click);
                 self.current_mouse_buttons.retain(|p| p != press);
                 self.current_mouse_buttons.push(*press);
+                if press == &MousePress::Right {
+                    super::debug_mouse_menu_log(
+                        self.mux_window_id,
+                        format!(
+                            "mouse press right tracked click_streak={:?} capture={:?} tracked_buttons={:?}",
+                            self.last_mouse_click.as_ref().map(|c| c.streak),
+                            self.current_mouse_capture,
+                            self.current_mouse_buttons
+                        ),
+                    );
+                }
 
                 if press == &MousePress::Left
                     && first_line_offset > 0
@@ -901,6 +938,17 @@ impl super::TermWindow {
 
         if capture_mouse && !near_window_edge {
             self.current_mouse_capture = Some(MouseCapture::TerminalPane(pane.pane_id()));
+            if matches!(event.kind, WMEK::Press(MousePress::Right)) {
+                super::debug_mouse_menu_log(
+                    self.mux_window_id,
+                    format!(
+                        "capture set TerminalPane pane_id={} near_window_edge={} outside_window={}",
+                        pane.pane_id(),
+                        near_window_edge,
+                        outside_window
+                    ),
+                );
+            }
         }
 
         let is_focused = if let Some(focused) = self.focused.as_ref() {
@@ -1151,9 +1199,49 @@ impl super::TermWindow {
                         MouseEventAltScreen::False
                     },
                 };
+                let trigger_for_log = format!("{event_trigger_type:?}");
 
                 if let Some(action) = self.input_map.lookup_mouse(event_trigger_type, mouse_mods) {
+                    let reset_after_launcher_action = matches!(
+                        &action,
+                        KeyAssignment::ShowLauncher
+                            | KeyAssignment::ShowLauncherArgs(_)
+                            | KeyAssignment::ShowTabNavigator
+                    );
+
+                    super::debug_mouse_menu_log(
+                        self.mux_window_id,
+                        format!(
+                            "mouse binding hit trigger={trigger_for_log} action={action:?} capture_before={:?} tracked_buttons={:?}",
+                            self.current_mouse_capture, self.current_mouse_buttons
+                        ),
+                    );
+
                     self.perform_key_assignment(&pane, &action).ok();
+
+                    // Launcher-style actions can be triggered on MouseDown and
+                    // then consume the matching MouseUp in the overlay. Clear
+                    // local click/capture state so the next right click is not
+                    // treated as a stale drag/double-click sequence.
+                    if reset_after_launcher_action {
+                        self.current_mouse_capture = None;
+                        self.last_mouse_click = None;
+                        if let WMEK::Press(ref press) = event.kind {
+                            self.current_mouse_buttons.retain(|p| p != press);
+                        }
+                        super::debug_mouse_menu_log(
+                            self.mux_window_id,
+                            format!(
+                                "post-launcher reset capture={:?} tracked_buttons={:?}",
+                                self.current_mouse_capture, self.current_mouse_buttons
+                            ),
+                        );
+                    }
+                    super::debug_mouse_menu_log(
+                        self.mux_window_id,
+                        "mouse binding requested context.invalidate()".to_string(),
+                    );
+                    context.invalidate();
                     return;
                 }
             }

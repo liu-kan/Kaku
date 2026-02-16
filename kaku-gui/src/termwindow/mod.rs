@@ -59,8 +59,8 @@ use std::ops::Add;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use termwiz::hyperlink::Hyperlink;
 use termwiz::surface::SequenceNo;
 use wezterm_dynamic::Value;
@@ -89,6 +89,40 @@ use crate::spawn::SpawnWhere;
 use prevcursor::PrevCursorPos;
 
 const ATLAS_SIZE: usize = 128;
+
+fn debug_mouse_menu_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("KAKU_DEBUG_MOUSE_MENU")
+            .map(|value| {
+                let normalized = value.trim().to_ascii_lowercase();
+                !normalized.is_empty()
+                    && normalized != "0"
+                    && normalized != "false"
+                    && normalized != "off"
+                    && normalized != "no"
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn debug_mouse_menu_now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+pub(super) fn debug_mouse_menu_log(window_id: MuxWindowId, message: impl AsRef<str>) {
+    if !debug_mouse_menu_enabled() {
+        return;
+    }
+    log::info!(
+        "[mouse-menu][ts={}][win={window_id}] {}",
+        debug_mouse_menu_now_ms(),
+        message.as_ref()
+    );
+}
 
 lazy_static::lazy_static! {
     static ref WINDOW_CLASS: Mutex<String> = Mutex::new(wezterm_gui_subcommands::DEFAULT_WINDOW_CLASS.to_owned());
@@ -248,7 +282,10 @@ pub enum TermWindowNotif {
     },
     GetConfigOverrides(Sender<wezterm_dynamic::Value>),
     SetConfigOverrides(wezterm_dynamic::Value),
-    CancelOverlayForPane(PaneId),
+    CancelOverlayForPane {
+        pane_id: PaneId,
+        overlay_pane_id: Option<PaneId>,
+    },
     CancelOverlayForTab {
         tab_id: TabId,
         pane_id: Option<PaneId>,
@@ -1260,6 +1297,20 @@ impl TermWindow {
                 assignment,
                 tx,
             } => {
+                let is_launcher_action = matches!(
+                    &assignment,
+                    KeyAssignment::ShowLauncher
+                        | KeyAssignment::ShowLauncherArgs(_)
+                        | KeyAssignment::ShowTabNavigator
+                );
+                if is_launcher_action {
+                    debug_mouse_menu_log(
+                        self.mux_window_id,
+                        format!(
+                            "dispatch_notif PerformAssignment begin pane_id={pane_id} assignment={assignment:?}"
+                        ),
+                    );
+                }
                 let mux = Mux::get();
                 let result = || -> anyhow::Result<()> {
                     // The CopyMode overlay doesn't exist in the mux, but aliases
@@ -1281,7 +1332,23 @@ impl TermWindow {
                         .context("perform_key_assignment")?;
                     Ok(())
                 }();
+                if is_launcher_action {
+                    debug_mouse_menu_log(
+                        self.mux_window_id,
+                        format!(
+                            "dispatch_notif PerformAssignment result assignment={assignment:?} ok={}",
+                            result.is_ok()
+                        ),
+                    );
+                }
                 window.invalidate();
+                if is_launcher_action {
+                    debug_mouse_menu_log(
+                        self.mux_window_id,
+                        "dispatch_notif PerformAssignment requested window.invalidate()"
+                            .to_string(),
+                    );
+                }
                 if let Some(tx) = tx {
                     tx.try_send(result).ok();
                 }
@@ -1326,8 +1393,11 @@ impl TermWindow {
                     self.config_was_reloaded();
                 }
             }
-            TermWindowNotif::CancelOverlayForPane(pane_id) => {
-                self.cancel_overlay_for_pane(pane_id);
+            TermWindowNotif::CancelOverlayForPane {
+                pane_id,
+                overlay_pane_id,
+            } => {
+                self.cancel_overlay_for_pane_if_matches(pane_id, overlay_pane_id);
             }
             TermWindowNotif::CancelOverlayForTab { tab_id, pane_id } => {
                 self.cancel_overlay_for_tab(tab_id, pane_id);
@@ -1468,7 +1538,9 @@ impl TermWindow {
                     .context("send GetSelectionForPane response")?;
             }
             TermWindowNotif::Apply(func) => {
+                debug_mouse_menu_log(self.mux_window_id, "dispatch_notif Apply begin".to_string());
                 func(self);
+                debug_mouse_menu_log(self.mux_window_id, "dispatch_notif Apply end".to_string());
             }
             TermWindowNotif::SwitchToMuxWindow(mux_window_id) => {
                 self.mux_window_id = mux_window_id;
@@ -2593,8 +2665,20 @@ impl TermWindow {
 
         let config = &self.config;
         let alphabet = args.alphabet.unwrap_or(config.launcher_alphabet.clone());
+        debug_mouse_menu_log(
+            self.mux_window_id,
+            format!(
+                "show_launcher_impl queued pane_scoped={pane_scoped} tab_id={tab_id} pane_id={pane_id} flags={flags:?} initial_choice_idx={initial_choice_idx}"
+            ),
+        );
 
         promise::spawn::spawn(async move {
+            debug_mouse_menu_log(
+                mux_window_id,
+                format!(
+                    "show_launcher_impl async start pane_scoped={pane_scoped} tab_id={tab_id} pane_id={pane_id} flags={flags:?}"
+                ),
+            );
             let args = LauncherArgs::new(
                 &title,
                 flags,
@@ -2606,9 +2690,21 @@ impl TermWindow {
                 &alphabet,
             )
             .await;
+            debug_mouse_menu_log(
+                mux_window_id,
+                format!(
+                    "show_launcher_impl async args ready pane_scoped={pane_scoped} tab_id={tab_id} pane_id={pane_id}"
+                ),
+            );
 
             let win = window.clone();
             win.notify(TermWindowNotif::Apply(Box::new(move |term_window| {
+                debug_mouse_menu_log(
+                    term_window.mux_window_id,
+                    format!(
+                        "show_launcher_impl apply begin pane_scoped={pane_scoped} tab_id={tab_id} pane_id={pane_id}"
+                    ),
+                );
                 let mux = Mux::get();
                 if pane_scoped {
                     if let Some(pane) = mux.get_pane(pane_id) {
@@ -2620,6 +2716,12 @@ impl TermWindow {
 
                         term_window.assign_overlay_for_pane(pane_id, overlay);
                         promise::spawn::spawn(future).detach();
+                        debug_mouse_menu_log(
+                            term_window.mux_window_id,
+                            format!(
+                                "show_launcher_impl apply assigned pane overlay pane_id={pane_id}"
+                            ),
+                        );
                     }
                 } else if let Some(tab) = mux.get_tab(tab_id) {
                     let window = window.clone();
@@ -2630,8 +2732,21 @@ impl TermWindow {
 
                     term_window.assign_overlay(tab_id, overlay);
                     promise::spawn::spawn(future).detach();
+                    debug_mouse_menu_log(
+                        term_window.mux_window_id,
+                        format!("show_launcher_impl apply assigned tab overlay tab_id={tab_id}"),
+                    );
                 }
             })));
+            debug_mouse_menu_log(
+                mux_window_id,
+                "show_launcher_impl async posted apply notify".to_string(),
+            );
+            win.invalidate();
+            debug_mouse_menu_log(
+                mux_window_id,
+                "show_launcher_impl async requested window.invalidate()".to_string(),
+            );
         })
         .detach();
     }
@@ -2975,10 +3090,26 @@ impl TermWindow {
             ScrollToPrompt(n) => self.scroll_to_prompt(*n, pane)?,
             ScrollToTop => self.scroll_to_top(pane),
             ScrollToBottom => self.scroll_to_bottom(pane),
-            ShowTabNavigator => self.show_tab_navigator(),
+            ShowTabNavigator => {
+                debug_mouse_menu_log(
+                    self.mux_window_id,
+                    "perform_key_assignment ShowTabNavigator".to_string(),
+                );
+                self.show_tab_navigator()
+            }
             ShowDebugOverlay => self.show_debug_overlay(),
-            ShowLauncher => self.show_launcher(),
+            ShowLauncher => {
+                debug_mouse_menu_log(
+                    self.mux_window_id,
+                    "perform_key_assignment ShowLauncher".to_string(),
+                );
+                self.show_launcher()
+            }
             ShowLauncherArgs(args) => {
+                debug_mouse_menu_log(
+                    self.mux_window_id,
+                    format!("perform_key_assignment ShowLauncherArgs flags={:?}", args.flags),
+                );
                 let title = args.title.clone().unwrap_or("Launcher".to_string());
                 let args = LauncherActionArgs {
                     title: Some(title),
@@ -3779,8 +3910,46 @@ impl TermWindow {
         window.notify(TermWindowNotif::CancelOverlayForTab { tab_id, pane_id });
     }
 
+    fn cancel_overlay_for_pane_if_matches(
+        &mut self,
+        pane_id: PaneId,
+        overlay_pane_id: Option<PaneId>,
+    ) {
+        if let Some(expected_overlay_pane_id) = overlay_pane_id {
+            let current_overlay_pane_id = self
+                .pane_state(pane_id)
+                .overlay
+                .as_ref()
+                .map(|overlay| overlay.pane.pane_id());
+            if current_overlay_pane_id != Some(expected_overlay_pane_id) {
+                debug_mouse_menu_log(
+                    self.mux_window_id,
+                    format!(
+                        "cancel_overlay_for_pane_if_matches skipped pane_id={pane_id} expected_overlay_pane_id={expected_overlay_pane_id} current_overlay_pane_id={current_overlay_pane_id:?}"
+                    ),
+                );
+                return;
+            }
+            debug_mouse_menu_log(
+                self.mux_window_id,
+                format!(
+                    "cancel_overlay_for_pane_if_matches matched pane_id={pane_id} overlay_pane_id={expected_overlay_pane_id}"
+                ),
+            );
+        }
+
+        self.cancel_overlay_for_pane(pane_id);
+    }
+
     fn cancel_overlay_for_pane(&mut self, pane_id: PaneId) {
         if let Some(overlay) = self.pane_state(pane_id).overlay.take() {
+            debug_mouse_menu_log(
+                self.mux_window_id,
+                format!(
+                    "cancel_overlay_for_pane pane_id={pane_id} removing_overlay_pane_id={}",
+                    overlay.pane.pane_id()
+                ),
+            );
             // Ungh, when I built the CopyOverlay, its pane doesn't get
             // added to the mux and instead it reports the overlaid
             // pane id.  Take care to avoid killing ourselves off
@@ -3795,25 +3964,64 @@ impl TermWindow {
     }
 
     pub fn schedule_cancel_overlay_for_pane(window: Window, pane_id: PaneId) {
-        window.notify(TermWindowNotif::CancelOverlayForPane(pane_id));
+        window.notify(TermWindowNotif::CancelOverlayForPane {
+            pane_id,
+            overlay_pane_id: None,
+        });
+    }
+
+    pub fn schedule_cancel_overlay_for_pane_if_matches(
+        window: Window,
+        pane_id: PaneId,
+        overlay_pane_id: PaneId,
+    ) {
+        window.notify(TermWindowNotif::CancelOverlayForPane {
+            pane_id,
+            overlay_pane_id: Some(overlay_pane_id),
+        });
     }
 
     pub fn assign_overlay_for_pane(&mut self, pane_id: PaneId, pane: Arc<dyn Pane>) {
         self.cancel_overlay_for_pane(pane_id);
+        debug_mouse_menu_log(
+            self.mux_window_id,
+            format!("assign_overlay_for_pane pane_id={pane_id} overlay_pane_id={}", pane.pane_id()),
+        );
         self.pane_state(pane_id).overlay.replace(OverlayState {
             pane,
             key_table_state: KeyTableState::default(),
         });
         self.update_title();
+        if let Some(window) = self.window.as_ref() {
+            debug_mouse_menu_log(
+                self.mux_window_id,
+                format!("assign_overlay_for_pane pane_id={pane_id} window.invalidate()"),
+            );
+            window.invalidate();
+        }
     }
 
     pub fn assign_overlay(&mut self, tab_id: TabId, overlay: Arc<dyn Pane>) {
         self.cancel_overlay_for_tab(tab_id, None);
+        debug_mouse_menu_log(
+            self.mux_window_id,
+            format!(
+                "assign_overlay tab_id={tab_id} overlay_pane_id={}",
+                overlay.pane_id()
+            ),
+        );
         self.tab_state(tab_id).overlay.replace(OverlayState {
             pane: overlay,
             key_table_state: KeyTableState::default(),
         });
         self.update_title();
+        if let Some(window) = self.window.as_ref() {
+            debug_mouse_menu_log(
+                self.mux_window_id,
+                format!("assign_overlay tab_id={tab_id} window.invalidate()"),
+            );
+            window.invalidate();
+        }
     }
 
     fn resolve_search_pattern(&self, pattern: Pattern, pane: &Arc<dyn Pane>) -> MuxPattern {

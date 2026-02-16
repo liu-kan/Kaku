@@ -26,6 +26,11 @@ make install-hooks
 | `make build` | Compile binaries (no app bundle) |
 | `make app` | Build debug app bundle → `dist/Kaku.app` |
 
+Setting KAKU_DEBUG_MOUSE_MENU=1 can help you debug mouse meun.
+```bash
+KAKU_DEBUG_MOUSE_MENU=1 ./dist/Kaku.app/Contents/MacOS/kaku-gui 2>&1 | tee /tmp/kaku-mouse-menu.log
+```
+
 **Recommended workflow:**
 
 ```bash
