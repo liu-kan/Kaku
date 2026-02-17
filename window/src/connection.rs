@@ -25,6 +25,8 @@ pub enum ApplicationEvent {
     OpenCommandScript(String),
     /// The system wants to open a command in a new tab when possible
     OpenCommandScriptInTab(String),
+    /// The system requests focusing the tab/pane that owns this tty.
+    ActivatePaneForTty(String),
     PerformKeyAssignment(KeyAssignment),
 }
 

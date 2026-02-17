@@ -25,6 +25,7 @@ thread_local! {
 
 lazy_static::lazy_static! {
     static ref PENDING_SERVICE_OPENS: Mutex<Vec<(String, bool)>> = Mutex::new(Vec::new());
+    static ref PENDING_TTY_ACTIVATIONS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 // macOS can emit applicationOpenUntitledFile twice while no window has
 // materialized yet; keep a wider debounce to avoid duplicate SpawnWindow work.
@@ -284,13 +285,27 @@ fn dispatch_or_queue_service_open(path: String, prefer_existing_window: bool) {
         .push((path, prefer_existing_window));
 }
 
+fn dispatch_or_queue_tty_activation(tty: String) {
+    if let Some(conn) = Connection::get() {
+        conn.dispatch_app_event(ApplicationEvent::ActivatePaneForTty(tty));
+        return;
+    }
+
+    log::debug!("tty activation queued until GUI connection is ready");
+    PENDING_TTY_ACTIVATIONS.lock().unwrap().push(tty);
+}
+
 pub(crate) fn flush_pending_service_opens() {
     let pending = {
         let mut queued = PENDING_SERVICE_OPENS.lock().unwrap();
         std::mem::take(&mut *queued)
     };
+    let pending_ttys = {
+        let mut queued = PENDING_TTY_ACTIVATIONS.lock().unwrap();
+        std::mem::take(&mut *queued)
+    };
 
-    if pending.is_empty() {
+    if pending.is_empty() && pending_ttys.is_empty() {
         return;
     }
 
@@ -303,9 +318,79 @@ pub(crate) fn flush_pending_service_opens() {
             };
             conn.dispatch_app_event(event);
         }
+        for tty in pending_ttys {
+            conn.dispatch_app_event(ApplicationEvent::ActivatePaneForTty(tty));
+        }
     } else {
         let mut queued = PENDING_SERVICE_OPENS.lock().unwrap();
         queued.extend(pending);
+        let mut queued_ttys = PENDING_TTY_ACTIVATIONS.lock().unwrap();
+        queued_ttys.extend(pending_ttys);
+    }
+}
+
+fn parse_url_action(url: &Url) -> Option<(&str, String)> {
+    if url.scheme() != "kaku" {
+        return None;
+    }
+
+    let action = url
+        .host_str()
+        .filter(|host| !host.is_empty())
+        .or_else(|| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next())
+                .filter(|segment| !segment.is_empty())
+        })?;
+
+    if action != "open-tab" {
+        return None;
+    }
+
+    let tty = url
+        .query_pairs()
+        .find_map(|(key, value)| (key == "tty").then(|| value.into_owned()))?
+        .trim()
+        .to_string();
+    if tty.is_empty() {
+        return None;
+    }
+
+    Some((action, tty))
+}
+
+extern "C" fn application_open_urls(
+    _this: &mut Object,
+    _sel: Sel,
+    _app: *mut Object,
+    urls: *mut Object,
+) {
+    unsafe {
+        let count: NSInteger = msg_send![urls, count];
+        for i in 0..count {
+            let ns_url: *mut Object = msg_send![urls, objectAtIndex: i];
+            let abs_string: *mut Object = msg_send![ns_url, absoluteString];
+            if abs_string.is_null() {
+                continue;
+            }
+
+            let raw_url = nsstring_to_str(abs_string).to_string();
+            match Url::parse(&raw_url) {
+                Ok(parsed) => match parse_url_action(&parsed) {
+                    Some(("open-tab", tty)) => {
+                        log::debug!("application_open_urls open-tab tty={tty}");
+                        dispatch_or_queue_tty_activation(tty);
+                    }
+                    Some((_action, _)) => {}
+                    None => {
+                        log::warn!("application_open_urls unsupported url: {raw_url}");
+                    }
+                },
+                Err(err) => {
+                    log::warn!("application_open_urls invalid url {raw_url}: {err:#}");
+                }
+            }
+        }
     }
 }
 
@@ -388,6 +473,11 @@ fn get_class() -> &'static Class {
             cls.add_method(
                 sel!(application:openFiles:),
                 application_open_files as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            );
+            cls.add_method(
+                sel!(application:openURLs:),
+                application_open_urls
+                    as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
             );
             cls.add_method(
                 sel!(applicationDockMenu:),

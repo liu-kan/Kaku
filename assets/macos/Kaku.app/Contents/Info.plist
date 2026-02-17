@@ -22,6 +22,17 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>0.3.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>fun.tw93.kaku</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kaku</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleIconFile</key>
 	<string>terminal.icns</string>
 	<key>LSApplicationCategoryType</key>
