@@ -290,10 +290,42 @@ if [[ -f "\$KAKU_ZSH_DIR/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting
 fi
 
 # Auto-set TERM to xterm-256color for SSH connections when running under kaku,
-# since remote hosts typically lack the kaku terminfo entry
-if [[ "\$TERM" == "kaku" ]]; then
-    ssh() { TERM=xterm-256color command ssh "\$@"; }
-fi
+# since remote hosts typically lack the kaku terminfo entry.
+# Also auto-detect 1Password SSH agent and add IdentitiesOnly=yes to prevent
+# "Too many authentication failures" caused by 1Password offering all stored keys.
+# Set KAKU_SSH_SKIP_1PASSWORD_FIX=1 to disable the 1Password behavior.
+ssh() {
+    local -a extra_opts=()
+
+    # Fix TERM for kaku terminal
+    if [[ "\$TERM" == "kaku" ]]; then
+        extra_opts+=(-o "SetEnv=TERM=xterm-256color")
+    fi
+
+    # 1Password SSH agent fix: auto-add IdentitiesOnly=yes
+    if [[ -z "\${KAKU_SSH_SKIP_1PASSWORD_FIX-}" ]]; then
+        local sock="\${SSH_AUTH_SOCK:-}"
+        if [[ "\$sock" == *1password* || "\$sock" == *2BUA8C4S2C* ]]; then
+            # Check user hasn't already set -o IdentitiesOnly
+            local has_identitiesonly=false prev=""
+            for arg in "\$@"; do
+                [[ "\$prev" == "-o" && "\$arg" == IdentitiesOnly=* ]] && has_identitiesonly=true
+                prev="\$arg"
+            done
+            if ! \$has_identitiesonly; then
+                extra_opts+=(-o "IdentitiesOnly=yes")
+            fi
+        fi
+    fi
+
+    if [[ "\$TERM" == "kaku" ]]; then
+        TERM=xterm-256color command ssh "\${extra_opts[@]}" "\$@"
+    elif (( \${#extra_opts} > 0 )); then
+        command ssh "\${extra_opts[@]}" "\$@"
+    else
+        command ssh "\$@"
+    fi
+}
 EOF
 
 echo -e "  ${GREEN}✓${NC} ${BOLD}Script${NC}      Generated kaku.zsh init script"
