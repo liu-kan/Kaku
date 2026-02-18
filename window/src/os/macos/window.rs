@@ -252,9 +252,8 @@ mod cglbits {
 
     impl GlState {
         pub fn create(view: id) -> anyhow::Result<Self> {
-            log::trace!("Calling NSOpenGLPixelFormat::initWithAttributes");
-            let pixel_format = unsafe {
-                StrongPtr::new(NSOpenGLPixelFormat::alloc(nil).initWithAttributes_(&[
+            let make_pixel_format = |require_accelerated: bool| unsafe {
+                let mut attrs = vec![
                     appkit::NSOpenGLPFAOpenGLProfile as u32,
                     appkit::NSOpenGLProfileVersion3_2Core as u32,
                     appkit::NSOpenGLPFAClosestPolicy as u32,
@@ -267,15 +266,27 @@ mod cglbits {
                     appkit::NSOpenGLPFAStencilSize as u32,
                     8,
                     appkit::NSOpenGLPFAAllowOfflineRenderers as u32,
-                    appkit::NSOpenGLPFAAccelerated as u32,
-                    appkit::NSOpenGLPFADoubleBuffer as u32,
-                    0,
-                ]))
+                ];
+                if require_accelerated {
+                    attrs.push(appkit::NSOpenGLPFAAccelerated as u32);
+                }
+                attrs.push(appkit::NSOpenGLPFADoubleBuffer as u32);
+                attrs.push(0);
+                StrongPtr::new(NSOpenGLPixelFormat::alloc(nil).initWithAttributes_(&attrs))
             };
+
+            log::trace!("Calling NSOpenGLPixelFormat::initWithAttributes");
+            let mut pixel_format = make_pixel_format(true);
+            if pixel_format.is_null() {
+                log::warn!(
+                    "No accelerated NSOpenGL pixel format available; retrying without NSOpenGLPFAAccelerated"
+                );
+                pixel_format = make_pixel_format(false);
+            }
             log::trace!("NSOpenGLPixelFormat::initWithAttributes returned");
             ensure!(
                 !pixel_format.is_null(),
-                "failed to create NSOpenGLPixelFormat"
+                "failed to create NSOpenGLPixelFormat; this can happen in virtual machines without GPU acceleration. Try front_end='WebGpu' or enable VM GPU acceleration."
             );
 
             // Allow using retina resolutions; without this we're forced into low res

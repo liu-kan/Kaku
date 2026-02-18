@@ -8,7 +8,7 @@ use crate::tmux::{TmuxDomain, TmuxDomainState};
 use crate::{Domain, Mux, MuxNotification};
 use anyhow::Error;
 use async_trait::async_trait;
-use config::keyassignment::ScrollbackEraseMode;
+use config::keyassignment::{PaneEncoding, ScrollbackEraseMode};
 use config::{configuration, ExitBehavior, ExitBehaviorMessaging};
 use fancy_regex::Regex;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryInto;
 use std::io::{Result as IoResult, Write};
 use std::ops::Range;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use termwiz::escape::csi::{Sgr, CSI};
@@ -132,6 +133,7 @@ pub struct LocalPane {
     proc_list: Mutex<Option<CachedProcInfo>>,
     #[cfg(unix)]
     leader: Arc<Mutex<Option<CachedLeaderInfo>>>,
+    encoding: Arc<AtomicU8>,
     command_description: String,
 }
 
@@ -177,6 +179,14 @@ impl Pane for LocalPane {
         } else {
             self.terminal.lock().get_keyboard_encoding()
         }
+    }
+
+    fn get_encoding(&self) -> PaneEncoding {
+        PaneEncoding::from_u8(self.encoding.load(Ordering::Relaxed))
+    }
+
+    fn set_encoding(&self, encoding: PaneEncoding) {
+        self.encoding.store(encoding.to_u8(), Ordering::Relaxed);
     }
 
     fn get_current_seqno(&self) -> SequenceNo {
@@ -1005,6 +1015,7 @@ impl LocalPane {
         pty: Box<dyn MasterPty>,
         writer: Box<dyn Write + Send>,
         domain_id: DomainId,
+        encoding: Arc<AtomicU8>,
         command_description: String,
     ) -> Self {
         let (process, signaller, pid) = split_child(process);
@@ -1031,6 +1042,7 @@ impl LocalPane {
             proc_list: Mutex::new(None),
             #[cfg(unix)]
             leader: Arc::new(Mutex::new(None)),
+            encoding,
             command_description,
         }
     }

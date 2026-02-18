@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
+base64 = "0.21"
 chrono.workspace = true
 clap.workspace = true
 clap_complete.workspace = true

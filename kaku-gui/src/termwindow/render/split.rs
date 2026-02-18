@@ -32,26 +32,33 @@ impl crate::TermWindow {
         let split_thickness = self.config.split_thickness;
         let is_horizontal = split.direction == SplitDirection::Horizontal;
 
-        // Check if another split crosses this one
-        let crossing = all_splits.iter().any(|s| {
-            s.direction != split.direction
-                && if is_horizontal {
-                    s.top >= split.top
-                        && s.top < split.top + split.size
-                        && s.left <= split.left
-                        && split.left < s.left + s.size
-                } else {
-                    s.left >= split.left
-                        && s.left < split.left + split.size
-                        && s.top <= split.top
-                        && split.top < s.top + s.size
-                }
-        });
-
         if is_horizontal {
-            let extend = if crossing { 3.0 } else { 1.5 };
-            let y_start = pos_y - (cell_height / 2.0) - extend * cell_height;
-            let height = (1.0 + split.size as f32 + extend * 2.0) * cell_height;
+            // Vertical line (left-right split): find boundary horizontal splits
+            // at the top and bottom to align precisely
+            let boundary_top = all_splits.iter().find(|s| {
+                s.direction == SplitDirection::Vertical
+                    && s.top <= split.top
+                    && split.left >= s.left
+                    && split.left < s.left + s.size
+            });
+            let boundary_bottom = all_splits.iter().find(|s| {
+                s.direction == SplitDirection::Vertical
+                    && s.top >= split.top + split.size
+                    && split.left >= s.left
+                    && split.left < s.left + s.size
+            });
+
+            // Extend to boundary split center, or use default extend to window edge
+            let extend_top = match boundary_top {
+                Some(b) => split.top as f32 - b.top as f32 - 1.0,
+                None => 1.5,
+            };
+            let extend_bottom = match boundary_bottom {
+                Some(b) => b.top as f32 - (split.top + split.size) as f32,
+                None => 1.5,
+            };
+            let y_start = pos_y - (cell_height / 2.0) - extend_top * cell_height;
+            let height = (1.0 + split.size as f32 + extend_top + extend_bottom) * cell_height;
 
             self.filled_rectangle(
                 layers,
@@ -65,9 +72,32 @@ impl crate::TermWindow {
                 foreground,
             )?;
         } else {
-            let extend = if crossing { 4.0 } else { 2.0 };
-            let x_start = pos_x - (cell_width / 2.0) - extend * cell_width;
-            let width = (1.0 + split.size as f32 + extend * 2.0) * cell_width;
+            // Horizontal line (top-bottom split): find boundary vertical splits
+            // at the left and right to align precisely
+            let boundary_left = all_splits.iter().find(|s| {
+                s.direction == SplitDirection::Horizontal
+                    && s.left <= split.left
+                    && split.top >= s.top
+                    && split.top < s.top + s.size
+            });
+            let boundary_right = all_splits.iter().find(|s| {
+                s.direction == SplitDirection::Horizontal
+                    && s.left >= split.left + split.size
+                    && split.top >= s.top
+                    && split.top < s.top + s.size
+            });
+
+            // Extend to boundary split center, or use default extend to window edge
+            let extend_left = match boundary_left {
+                Some(b) => split.left as f32 - b.left as f32 - 1.0,
+                None => 2.0,
+            };
+            let extend_right = match boundary_right {
+                Some(b) => b.left as f32 - (split.left + split.size) as f32,
+                None => 2.0,
+            };
+            let x_start = pos_x - (cell_width / 2.0) - extend_left * cell_width;
+            let width = (1.0 + split.size as f32 + extend_left + extend_right) * cell_width;
 
             self.filled_rectangle(
                 layers,

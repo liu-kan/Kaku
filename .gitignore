@@ -74,6 +74,8 @@ CLAUDE.md
 **/CLAUDE.md
 /assets/vendor/*
 !/assets/vendor/starship.toml
+/.sisyphus/
+/log/
 
 # Changelog is managed in GitHub Releases only
 CHANGELOG.md

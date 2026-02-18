@@ -39,14 +39,14 @@ Kaku comes with intuitive macOS-native shortcuts:
 | :--- | :--- |
 | New Tab | `Cmd + T` |
 | New Window | `Cmd + N` |
+| Close Tab/Pane | `Cmd + W` |
+| Navigate Tabs | `Cmd + Shift + [`, `Cmd + Shift + ]` or `Cmd + 1-9` |
+| Navigate Panes | `Cmd + Opt + Arrows` |
 | Split Pane Vertical | `Cmd + D` |
 | Split Pane Horizontal | `Cmd + Shift + D` |
 | Toggle Split Direction | `Cmd + Shift + S` |
 | Zoom/Unzoom Pane | `Cmd + Shift + Enter` |
 | Resize Pane | `Cmd + Ctrl + Arrows` |
-| Close Tab/Pane | `Cmd + W` |
-| Navigate Tabs | `Cmd + [`, `Cmd + ]` or `Cmd + 1-9` |
-| Navigate Panes | `Cmd + Opt + Arrows` |
 | Clear Screen | `Cmd + K` |
 | Font Size | `Cmd + +`, `Cmd + -`, `Cmd + 0` |
 | Smart Jump | `z <dir>` |
@@ -99,17 +99,14 @@ Achieved through aggressive stripping of unused features, lazy loading of color 
 
    Not at the moment. Kaku is currently macOS-only while we focus on polishing the macOS experience. Windows and Linux versions may come later once the macOS version is mature.
 
-3. **Can I customize the split line between panes?**
-
-   Yes. You can set `split_thickness` in `~/.config/kaku/kaku.lua` to adjust the line width in pixels, default is 2.0. The split line color is controlled by the `split` field in your color scheme.
-
-   ```lua
-   config.split_thickness = 1
-   ```
-
-4. **Can Kaku use transparent windows on macOS?**
+3. **Can Kaku use transparent windows on macOS?**
 
    Yes. You can set `window_background_opacity` and optionally `macos_window_background_blur` in `~/.config/kaku/kaku.lua`. Transparent mode now keeps top/right/bottom padding regions visually consistent to avoid transparent gaps.
+
+4. **Why does Kaku fail to start in some virtual macOS environments?**
+
+   This usually means the VM has no usable GPU backend (`failed to create NSOpenGLPixelFormat`).
+   Enable VM GPU acceleration, or set `config.front_end = 'WebGpu'` in `~/.config/kaku/kaku.lua`.
 
 ## Contributors
 

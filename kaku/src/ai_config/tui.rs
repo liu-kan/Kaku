@@ -1,79 +1,22 @@
 use anyhow::Context;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    MouseEventKind,
 };
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Layout, Margin, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use std::sync::LazyLock;
-
-struct Theme {
-    primary: Color,
-    secondary: Color,
-    accent: Color,
-    error: Color,
-    text: Color,
-    muted: Color,
-    bg: Color,
-    panel: Color,
-}
-
-fn parse_hex(hex: &str) -> Color {
-    let hex = hex.trim_start_matches('#');
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-    Color::Rgb(r, g, b)
-}
-
-static THEME: LazyLock<Theme> = LazyLock::new(|| {
-    let json: serde_json::Value =
-        serde_json::from_str(super::OPENCODE_THEME_JSON).unwrap_or_default();
-    let defs = &json["defs"];
-    let hex =
-        |key: &str, fallback: &str| -> Color { parse_hex(defs[key].as_str().unwrap_or(fallback)) };
-    Theme {
-        primary: hex("primary", "#a277ff"),
-        secondary: hex("secondary", "#61ffca"),
-        accent: hex("accent", "#ffca85"),
-        error: hex("error", "#ff6767"),
-        text: hex("text", "#edecee"),
-        muted: hex("muted", "#6b6b6b"),
-        bg: hex("bg", "#15141b"),
-        panel: hex("element", "#1f1d28"),
-    }
-});
-
-macro_rules! define_colors {
-    ($($name:ident => $field:ident),* $(,)?) => {
-        $(
-            #[allow(non_snake_case)]
-            fn $name() -> Color { THEME.$field }
-        )*
-    }
-}
-
-define_colors! {
-    PURPLE => primary,
-    GREEN => secondary,
-    YELLOW => accent,
-    RED => error,
-    TEXT => text,
-    MUTED => muted,
-    BG => bg,
-    PANEL => panel,
-}
+mod ui;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tool {
     ClaudeCode,
+    Codex,
+    Gemini,
+    Copilot,
     OpenCode,
     OpenClaw,
 }
@@ -82,6 +25,9 @@ impl Tool {
     fn label(&self) -> &'static str {
         match self {
             Tool::ClaudeCode => "Claude Code",
+            Tool::Codex => "Codex",
+            Tool::Gemini => "Gemini CLI",
+            Tool::Copilot => "Copilot CLI",
             Tool::OpenCode => "OpenCode",
             Tool::OpenClaw => "OpenClaw",
         }
@@ -91,6 +37,9 @@ impl Tool {
         let home = config::HOME_DIR.clone();
         match self {
             Tool::ClaudeCode => home.join(".claude").join("settings.json"),
+            Tool::Codex => home.join(".codex").join("config.toml"),
+            Tool::Gemini => home.join(".gemini").join("settings.json"),
+            Tool::Copilot => home.join(".copilot").join("config.json"),
             Tool::OpenCode => home.join(".config").join("opencode").join("opencode.json"),
             Tool::OpenClaw => {
                 let new_path = home.join(".openclaw").join("openclaw.json");
@@ -107,7 +56,14 @@ impl Tool {
     }
 }
 
-const ALL_TOOLS: [Tool; 3] = [Tool::ClaudeCode, Tool::OpenCode, Tool::OpenClaw];
+const ALL_TOOLS: [Tool; 6] = [
+    Tool::ClaudeCode,
+    Tool::Codex,
+    Tool::Gemini,
+    Tool::Copilot,
+    Tool::OpenCode,
+    Tool::OpenClaw,
+];
 
 struct FieldEntry {
     key: String,
@@ -160,18 +116,46 @@ impl ToolState {
             }
         };
 
-        let parsed: serde_json::Value = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(_) => {
-                let stripped = strip_jsonc_comments(&raw);
-                serde_json::from_str(&stripped).unwrap_or_default()
-            }
-        };
-
         let fields = match tool {
-            Tool::ClaudeCode => extract_claude_code_fields(&parsed),
-            Tool::OpenCode => extract_opencode_fields(&parsed),
-            Tool::OpenClaw => extract_openclaw_fields(&parsed),
+            Tool::ClaudeCode => {
+                let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        let stripped = strip_jsonc_comments(&raw);
+                        serde_json::from_str(&stripped).unwrap_or_default()
+                    }
+                };
+                extract_claude_code_fields(&parsed)
+            }
+            Tool::Codex => extract_codex_fields(&raw),
+            Tool::Gemini => {
+                let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                extract_gemini_fields(&parsed)
+            }
+            Tool::Copilot => {
+                let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                extract_copilot_fields(&parsed)
+            }
+            Tool::OpenCode => {
+                let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        let stripped = strip_jsonc_comments(&raw);
+                        serde_json::from_str(&stripped).unwrap_or_default()
+                    }
+                };
+                extract_opencode_fields(&parsed)
+            }
+            Tool::OpenClaw => {
+                let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        let stripped = strip_jsonc_comments(&raw);
+                        serde_json::from_str(&stripped).unwrap_or_default()
+                    }
+                };
+                extract_openclaw_fields(&parsed)
+            }
         };
 
         ToolState {
@@ -249,142 +233,741 @@ fn mask_key(val: &str) -> String {
     if val.is_empty() {
         return "—".into();
     }
-    if val.len() <= 8 {
+    if val.len() <= 12 {
         return "****".into();
     }
-    format!("{}...****", &val[..8])
+    // Show first 12 chars and last 4 chars
+    format!("{}...{}", &val[..12], &val[val.len() - 4..])
 }
 
-fn env_str(val: &serde_json::Value, key: &str) -> String {
-    val.get("env")
-        .and_then(|e| e.get(key))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string()
+/// Get OpenAI account email from JWT token in auth.json
+fn get_opencode_openai_account(entry: &serde_json::Value) -> Option<String> {
+    let token = entry.get("access")?.as_str()?;
+
+    // JWT format: header.payload.signature
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    // Base64 URL-safe decode payload (add padding if needed)
+    let mut payload = parts[1].to_string();
+    while payload.len() % 4 != 0 {
+        payload.push('=');
+    }
+
+    use base64::Engine;
+    let decoded = base64::engine::general_purpose::URL_SAFE
+        .decode(&payload)
+        .ok()?;
+    let jwt_data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+
+    // OpenAI JWT payload contains email in custom claim
+    jwt_data
+        .get("https://api.openai.com/profile")?
+        .get("email")?
+        .as_str()
+        .map(|s| s.to_string())
 }
 
-fn extract_claude_code_fields(val: &serde_json::Value) -> Vec<FieldEntry> {
-    let base_url = env_str(val, "ANTHROPIC_BASE_URL");
-    let auth_token = env_str(val, "ANTHROPIC_AUTH_TOKEN");
-    let sonnet_model = env_str(val, "ANTHROPIC_DEFAULT_SONNET_MODEL");
-    let opus_model = env_str(val, "ANTHROPIC_DEFAULT_OPUS_MODEL");
-    let haiku_model = env_str(val, "ANTHROPIC_DEFAULT_HAIKU_MODEL");
+/// Get Google account email by matching refresh token with antigravity-accounts.json
+fn get_opencode_google_account(entry: &serde_json::Value) -> Option<String> {
+    let refresh_token = entry.get("refresh")?.as_str()?;
 
-    let mut model_options: Vec<String> = Vec::new();
-    for m in [&sonnet_model, &opus_model, &haiku_model] {
-        if !m.is_empty() && !model_options.contains(m) {
-            model_options.push(m.clone());
+    // Extract project ID from refresh token (format: "token|project-id")
+    let project_id = if let Some(pos) = refresh_token.rfind('|') {
+        &refresh_token[pos + 1..]
+    } else {
+        return None;
+    };
+
+    let accounts_path = config::HOME_DIR
+        .join(".config")
+        .join("opencode")
+        .join("antigravity-accounts.json");
+
+    let raw = std::fs::read_to_string(&accounts_path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+
+    // Find account with matching project ID
+    let accounts = parsed.get("accounts")?.as_array()?;
+    for account in accounts {
+        if account.get("projectId")?.as_str() == Some(project_id) {
+            return account.get("email")?.as_str().map(|s| s.to_string());
         }
     }
 
-    vec![
-        FieldEntry {
-            key: "Primary Model".into(),
-            value: {
-                let v = json_str(val, "model");
-                if v.is_empty() {
-                    "default".into()
-                } else {
-                    v
+    None
+}
+
+/// Get GitHub Copilot username from gh auth status
+fn get_opencode_github_copilot_account() -> Option<String> {
+    get_copilot_account()
+}
+
+/// Get Gemini account email from google_accounts.json
+fn get_gemini_account() -> Option<String> {
+    let path = config::HOME_DIR
+        .join(".gemini")
+        .join("google_accounts.json");
+
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+
+    // Extract "active" field
+    parsed.get("active")?.as_str().map(|s| s.to_string())
+}
+
+/// Get Codex account email from JWT token in auth.json
+fn get_codex_account() -> Option<String> {
+    let auth_path = config::HOME_DIR.join(".codex").join("auth.json");
+    let raw = std::fs::read_to_string(&auth_path).ok()?;
+    let auth_json: serde_json::Value = serde_json::from_str(&raw).ok()?;
+
+    // Extract access_token from tokens object
+    let token = auth_json.get("tokens")?.get("access_token")?.as_str()?;
+
+    // JWT format: header.payload.signature
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    // Base64 URL-safe decode payload (add padding if needed)
+    let mut payload = parts[1].to_string();
+    while payload.len() % 4 != 0 {
+        payload.push('=');
+    }
+
+    use base64::Engine;
+    let decoded = base64::engine::general_purpose::URL_SAFE
+        .decode(&payload)
+        .ok()?;
+    let jwt_data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+
+    // OpenAI JWT payload contains email in custom claim
+    jwt_data
+        .get("https://api.openai.com/profile")?
+        .get("email")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+/// Get full API Key from auth.json for OpenCode provider
+fn get_opencode_api_key(provider_name: &str) -> Option<String> {
+    let auth_path = config::HOME_DIR
+        .join(".local")
+        .join("share")
+        .join("opencode")
+        .join("auth.json");
+
+    let raw = std::fs::read_to_string(&auth_path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+
+    parsed
+        .get(provider_name)?
+        .get("key")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+/// Get GitHub Copilot username from gh CLI
+fn get_copilot_account() -> Option<String> {
+    let output = std::process::Command::new("gh")
+        .args(["api", "user", "-q", ".login"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Get Claude Code account email from claude auth status
+fn get_claude_code_account() -> Option<String> {
+    let output = std::process::Command::new("claude")
+        .args(["auth", "status"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let json_str = String::from_utf8(output.stdout).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).ok()?;
+
+    // Extract email from auth status JSON
+    parsed.get("email")?.as_str().map(|s| s.to_string())
+}
+
+/// Format auth status, with account fallback to auth method
+fn format_auth_status(account: Option<String>, fallback_method: &str) -> String {
+    match account {
+        Some(acc) if !acc.is_empty() => format!("✓ {}", acc),
+        _ => format!("✓ {}", fallback_method),
+    }
+}
+
+/// Fetch models.dev data, cached to ~/.cache/kaku/models.json.
+/// No TTL — use `r` key in TUI to force refresh.
+fn load_models_dev_json() -> Option<serde_json::Value> {
+    let cache_dir = config::HOME_DIR.join(".cache").join("kaku");
+    let cache_path = cache_dir.join("models.json");
+
+    // Use cache if exists
+    if let Ok(raw) = std::fs::read_to_string(&cache_path) {
+        if let Ok(v) = serde_json::from_str(&raw) {
+            return Some(v);
+        }
+    }
+
+    // Fetch from API via curl (macOS built-in)
+    fetch_models_dev_json()
+}
+
+/// Force fetch from models.dev and update cache.
+fn fetch_models_dev_json() -> Option<serde_json::Value> {
+    let cache_dir = config::HOME_DIR.join(".cache").join("kaku");
+    let cache_path = cache_dir.join("models.json");
+
+    let output = std::process::Command::new("curl")
+        .args(["-sS", "--max-time", "10", "https://models.dev/api.json"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let raw = String::from_utf8(output.stdout).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let _ = config::create_user_owned_dirs(&cache_dir);
+    let _ = std::fs::write(&cache_path, &raw);
+    Some(v)
+}
+
+/// Read model IDs from models.dev for a given provider.
+/// Returns latest models sorted by release_date (newest first), deduped to
+/// only keep the short alias (e.g. "claude-sonnet-4-5") and skip dated
+/// variants (e.g. "claude-sonnet-4-5-20250929").
+fn read_models_dev(provider_id: &str) -> Vec<String> {
+    let parsed = match load_models_dev_json() {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let models = match parsed
+        .get(provider_id)
+        .and_then(|p| p.get("models"))
+        .and_then(|m| m.as_object())
+    {
+        Some(m) => m,
+        None => return Vec::new(),
+    };
+
+    // Collect (id, release_date) pairs, skip embedding/tts/image-only models
+    let mut items: Vec<(&str, &str)> = models
+        .iter()
+        .filter_map(|(id, m)| {
+            // Skip non-chat models
+            let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            if name.contains("Embedding")
+                || name.contains("TTS")
+                || name.contains("Image")
+                || name.contains("Live")
+            {
+                return None;
+            }
+            // Skip dated variants (e.g. "claude-opus-4-5-20251101", "gemini-2.5-flash-preview-06-17")
+            if id.chars().rev().take(8).all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            // Skip dated preview variants with "xx-xx" suffix (e.g. "09-2025", "06-17")
+            // Require both segments ≥ 2 chars to avoid filtering version numbers like "4-5"
+            if let Some(last_dash) = id.rfind('-') {
+                let suffix = &id[last_dash + 1..];
+                if let Some(second_dash) = id[..last_dash].rfind('-') {
+                    let prev = &id[second_dash + 1..last_dash];
+                    if prev.len() >= 2
+                        && prev.len() <= 4
+                        && suffix.len() >= 2
+                        && suffix.len() <= 4
+                        && prev.chars().all(|c| c.is_ascii_digit())
+                        && suffix.chars().all(|c| c.is_ascii_digit())
+                    {
+                        return None;
+                    }
                 }
-            },
-            options: model_options,
-            ..Default::default()
-        },
-        FieldEntry {
-            key: "Base URL".into(),
-            value: if base_url.is_empty() {
-                "—".into()
-            } else {
-                base_url
-            },
-            options: vec![],
-            ..Default::default()
-        },
-        FieldEntry {
-            key: "API Key".into(),
-            value: mask_key(&auth_token),
-            options: vec![],
-            ..Default::default()
-        },
-        FieldEntry {
-            key: "Models".into(),
-            value: String::new(),
+            }
+            // Skip "-latest" aliases (e.g. "gemini-flash-latest")
+            if id.ends_with("-latest") {
+                return None;
+            }
+            let rd = m.get("release_date").and_then(|v| v.as_str()).unwrap_or("");
+            Some((id.as_str(), rd))
+        })
+        .collect();
+
+    items.sort_by(|a, b| b.1.cmp(a.1));
+    items
+        .into_iter()
+        .take(4)
+        .map(|(id, _)| id.to_string())
+        .collect()
+}
+
+fn extract_claude_code_fields(val: &serde_json::Value) -> Vec<FieldEntry> {
+    let model = json_str(val, "model");
+
+    let model_options = read_models_dev("anthropic");
+
+    let display_value = if model.is_empty() {
+        // Show the latest model name as default hint
+        model_options
+            .first()
+            .map(|m| format!("{} (default)", m))
+            .unwrap_or_else(|| "default".into())
+    } else {
+        model
+    };
+
+    let mut fields = vec![FieldEntry {
+        key: "Model".into(),
+        value: display_value,
+        options: model_options,
+        ..Default::default()
+    }];
+
+    // Auth status: Claude Code uses OAuth; statsig dir indicates active session
+    let statsig_dir = config::HOME_DIR.join(".claude").join("statsig");
+    if statsig_dir.exists() {
+        let account = get_claude_code_account();
+        fields.push(FieldEntry {
+            key: "Auth".into(),
+            value: format_auth_status(account, "oauth"),
             options: vec![],
             editable: false,
-        },
-        FieldEntry {
-            key: "Models ▸ Sonnet".into(),
-            value: if sonnet_model.is_empty() {
-                "—".into()
-            } else {
-                sonnet_model
-            },
+        });
+    }
+
+    // Show env-based provider config if present (e.g. OpenRouter, Pipe AI, Kimi)
+    if let Some(env) = val.get("env").and_then(|e| e.as_object()) {
+        let base_url = env
+            .get("ANTHROPIC_BASE_URL")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let auth_token = env
+            .get("ANTHROPIC_AUTH_TOKEN")
+            .or_else(|| env.get("ANTHROPIC_API_KEY"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        if !base_url.is_empty() {
+            fields.push(FieldEntry {
+                key: "Base URL".into(),
+                value: base_url,
+                options: vec![],
+                ..Default::default()
+            });
+        }
+        if !auth_token.is_empty() {
+            fields.push(FieldEntry {
+                key: "API Key".into(),
+                value: mask_key(&auth_token),
+                options: vec![],
+                ..Default::default()
+            });
+        }
+    }
+
+    fields
+}
+
+fn extract_codex_fields(raw: &str) -> Vec<FieldEntry> {
+    let mut fields = Vec::new();
+
+    // Read available models from Codex model cache
+    let model_options = read_codex_model_options();
+
+    // Parse TOML manually for the fields we care about
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.starts_with('[') || line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, val)) = line.split_once('=') {
+            let key = key.trim().trim_matches('"');
+            let val = val.trim().trim_matches('"');
+            match key {
+                "model" => {
+                    fields.push(FieldEntry {
+                        key: "Model".into(),
+                        value: val.to_string(),
+                        options: model_options.clone(),
+                        ..Default::default()
+                    });
+                }
+                "model_reasoning_effort" => {
+                    fields.push(FieldEntry {
+                        key: "Reasoning Effort".into(),
+                        value: val.to_string(),
+                        options: read_codex_reasoning_options(),
+                        ..Default::default()
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Check auth status from auth.json
+    let auth_path = config::HOME_DIR.join(".codex").join("auth.json");
+    if let Ok(auth_raw) = std::fs::read_to_string(&auth_path) {
+        if let Ok(auth) = serde_json::from_str::<serde_json::Value>(&auth_raw) {
+            let auth_mode = auth.get("auth_mode").and_then(|v| v.as_str()).unwrap_or("");
+            if !auth_mode.is_empty() {
+                let account = get_codex_account();
+                fields.push(FieldEntry {
+                    key: "Auth".into(),
+                    value: format_auth_status(account, auth_mode),
+                    options: vec![],
+                    editable: false,
+                });
+            }
+        }
+    }
+
+    fields
+}
+
+/// Read model slugs from Codex's own cache, or from models.dev.
+fn read_codex_model_options() -> Vec<String> {
+    let cache_path = config::HOME_DIR.join(".codex").join("models_cache.json");
+    if let Ok(raw) = std::fs::read_to_string(&cache_path) {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let mut models: Vec<(String, usize)> = parsed
+                .get("models")
+                .and_then(|m| m.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter(|m| {
+                            m.get("visibility")
+                                .and_then(|v| v.as_str())
+                                .map(|v| v == "list")
+                                .unwrap_or(false)
+                        })
+                        .filter_map(|m| {
+                            let slug = m.get("slug").and_then(|v| v.as_str())?;
+                            let priority =
+                                m.get("priority").and_then(|v| v.as_u64()).unwrap_or(999) as usize;
+                            Some((slug.to_string(), priority))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !models.is_empty() {
+                models.sort_by_key(|(_, p)| *p);
+                return models.into_iter().map(|(s, _)| s).collect();
+            }
+        }
+    }
+
+    read_models_dev("openai")
+}
+
+/// Read reasoning effort options from Codex's models cache for the current model.
+fn read_codex_reasoning_options() -> Vec<String> {
+    let config_path = config::HOME_DIR.join(".codex").join("config.toml");
+    let current_model = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|raw| {
+            raw.lines()
+                .find(|l| l.trim_start().starts_with("model"))
+                .and_then(|l| l.split_once('='))
+                .map(|(_, v)| v.trim().trim_matches('"').to_string())
+        })
+        .unwrap_or_default();
+
+    let cache_path = config::HOME_DIR.join(".codex").join("models_cache.json");
+    if let Ok(raw) = std::fs::read_to_string(&cache_path) {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(models) = parsed.get("models").and_then(|m| m.as_array()) {
+                // Find the current model or first visible model
+                let model = models
+                    .iter()
+                    .find(|m| m.get("slug").and_then(|v| v.as_str()) == Some(&current_model))
+                    .or_else(|| {
+                        models
+                            .iter()
+                            .find(|m| m.get("visibility").and_then(|v| v.as_str()) == Some("list"))
+                    });
+
+                if let Some(m) = model {
+                    if let Some(levels) = m
+                        .get("supported_reasoning_levels")
+                        .and_then(|l| l.as_array())
+                    {
+                        let opts: Vec<String> = levels
+                            .iter()
+                            .filter_map(|l| {
+                                l.get("effort")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect();
+                        if !opts.is_empty() {
+                            return opts;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    vec!["low".into(), "medium".into(), "high".into()]
+}
+
+fn extract_gemini_fields(val: &serde_json::Value) -> Vec<FieldEntry> {
+    let mut fields = Vec::new();
+
+    let model = val
+        .get("model")
+        .and_then(|m| {
+            m.get("name")
+                .and_then(|n| n.as_str())
+                .or_else(|| m.as_str())
+        })
+        .unwrap_or("")
+        .to_string();
+    let model_options = read_models_dev("google");
+
+    let display_value = if model.is_empty() {
+        model_options
+            .first()
+            .map(|m| format!("{} (default)", m))
+            .unwrap_or_else(|| "default".into())
+    } else {
+        model
+    };
+
+    fields.push(FieldEntry {
+        key: "Model".into(),
+        value: display_value,
+        options: model_options,
+        ..Default::default()
+    });
+
+    let auth_type = val
+        .get("security")
+        .and_then(|s| s.get("auth"))
+        .and_then(|a| a.get("selectedType"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if !auth_type.is_empty() {
+        let account = get_gemini_account();
+        fields.push(FieldEntry {
+            key: "Auth".into(),
+            value: format_auth_status(account, auth_type),
             options: vec![],
-            ..Default::default()
+            editable: false,
+        });
+    }
+
+    fields
+}
+
+/// Read model choices from `copilot --help` output, fallback to models.dev.
+fn read_copilot_model_options() -> Vec<String> {
+    if let Ok(output) = std::process::Command::new("copilot").arg("--help").output() {
+        let text = String::from_utf8_lossy(&output.stdout);
+        // Find "--model" first, then parse the choices after it
+        if let Some(model_pos) = text.find("--model") {
+            let after_model = &text[model_pos..];
+            if let Some(choices_pos) = after_model.find("choices:") {
+                let rest = &after_model[choices_pos + "choices:".len()..];
+                if let Some(end) = rest.find(')') {
+                    let choices_str = &rest[..end];
+                    let models: Vec<String> = choices_str
+                        .split(',')
+                        .map(|s| s.trim().trim_matches('"').trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    if !models.is_empty() {
+                        return models;
+                    }
+                }
+            }
+        }
+    }
+    read_models_dev("anthropic")
+}
+
+fn extract_copilot_fields(val: &serde_json::Value) -> Vec<FieldEntry> {
+    let model = json_str(val, "model");
+
+    let model_options = read_copilot_model_options();
+
+    let mut fields = vec![FieldEntry {
+        key: "Model".into(),
+        value: if model.is_empty() {
+            "default".into()
+        } else {
+            model
         },
-        FieldEntry {
-            key: "Models ▸ Opus".into(),
-            value: if opus_model.is_empty() {
-                "—".into()
-            } else {
-                opus_model
-            },
+        options: model_options,
+        ..Default::default()
+    }];
+
+    // Copilot authenticates via GitHub OAuth; session files indicate auth
+    let session_dir = config::HOME_DIR.join(".copilot").join("session-state");
+    if session_dir.exists() {
+        let account = get_copilot_account();
+        fields.push(FieldEntry {
+            key: "Auth".into(),
+            value: format_auth_status(account, "github"),
             options: vec![],
-            ..Default::default()
-        },
-        FieldEntry {
-            key: "Models ▸ Haiku".into(),
-            value: if haiku_model.is_empty() {
-                "—".into()
-            } else {
-                haiku_model
-            },
-            options: vec![],
-            ..Default::default()
-        },
-    ]
+            editable: false,
+        });
+    }
+
+    fields
 }
 
 fn extract_opencode_fields(val: &serde_json::Value) -> Vec<FieldEntry> {
     let primary_model = json_str(val, "model");
-    let small_model = json_str(val, "small_model");
-    let theme = json_str(val, "theme");
 
-    let mut fields = vec![
-        FieldEntry {
-            key: "Primary Model".into(),
-            value: if primary_model.is_empty() {
-                "—".into()
-            } else {
-                primary_model
-            },
-            options: vec![],
-            ..Default::default()
-        },
-        FieldEntry {
-            key: "Small Model".into(),
-            value: if small_model.is_empty() {
-                "—".into()
-            } else {
-                small_model
-            },
-            options: vec![],
-            ..Default::default()
-        },
-        FieldEntry {
-            key: "Theme".into(),
-            value: if theme.is_empty() {
-                "—".into()
-            } else {
-                theme
-            },
-            options: vec![],
-            editable: false,
-        },
-    ];
+    // Collect model IDs from configured providers in opencode.json
+    let mut model_options: Vec<String> = val
+        .get("provider")
+        .and_then(|p| p.as_object())
+        .map(|providers| {
+            let mut ids = Vec::new();
+            for (name, prov) in providers {
+                if let Some(models) = prov.get("models").and_then(|m| m.as_object()) {
+                    for model_id in models.keys() {
+                        ids.push(format!("{}/{}", name, model_id));
+                    }
+                }
+            }
+            ids
+        })
+        .unwrap_or_default();
 
-    // Dynamically enumerate all providers
+    // Also discover models from authenticated providers in auth.json
+    if model_options.is_empty() {
+        let auth_path = config::HOME_DIR
+            .join(".local")
+            .join("share")
+            .join("opencode")
+            .join("auth.json");
+        if let Ok(auth_raw) = std::fs::read_to_string(&auth_path) {
+            if let Ok(auth) = serde_json::from_str::<serde_json::Value>(&auth_raw) {
+                if let Some(obj) = auth.as_object() {
+                    for auth_name in obj.keys() {
+                        // Map well-known aliases, otherwise use auth name directly
+                        let models_dev_id = match auth_name.as_str() {
+                            "github-copilot" => "anthropic",
+                            other => other,
+                        };
+                        for model in read_models_dev(models_dev_id) {
+                            let prefixed = format!("{}/{}", auth_name, model);
+                            if !model_options.contains(&prefixed) {
+                                model_options.push(prefixed);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let has_options = !model_options.is_empty();
+    let mut fields = vec![FieldEntry {
+        key: "Model".into(),
+        value: if primary_model.is_empty() {
+            "—".into()
+        } else {
+            primary_model
+        },
+        options: model_options,
+        editable: has_options,
+        ..Default::default()
+    }];
+
+    // Read auth.json for provider authentication status
+    let auth_path = config::HOME_DIR
+        .join(".local")
+        .join("share")
+        .join("opencode")
+        .join("auth.json");
+    if let Ok(auth_raw) = std::fs::read_to_string(&auth_path) {
+        if let Ok(auth) = serde_json::from_str::<serde_json::Value>(&auth_raw) {
+            if let Some(obj) = auth.as_object() {
+                // Sort: well-known providers first, then rest alphabetically
+                let priority = |name: &str| -> usize {
+                    match name {
+                        n if n.contains("claude") || n.contains("anthropic") => 0,
+                        "openai" => 1,
+                        "google" => 2,
+                        "github-copilot" => 3,
+                        _ => 4,
+                    }
+                };
+                let mut entries: Vec<_> = obj.iter().collect();
+                entries.sort_by(|(a, _), (b, _)| {
+                    let pa = priority(a);
+                    let pb = priority(b);
+                    pa.cmp(&pb).then_with(|| a.cmp(b))
+                });
+
+                for (name, entry) in entries {
+                    let auth_type = entry
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    let status = match auth_type.as_str() {
+                        "api" => {
+                            let key = entry.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                            format!("✓ {}", mask_key(key))
+                        }
+                        "oauth" => {
+                            let account = match name.as_str() {
+                                "openai" => get_opencode_openai_account(entry),
+                                "google" => get_opencode_google_account(entry),
+                                "github-copilot" => get_opencode_github_copilot_account(),
+                                _ => None,
+                            };
+                            format_auth_status(account, "oauth")
+                        }
+                        _ => auth_type.clone(),
+                    };
+
+                    fields.push(FieldEntry {
+                        key: name.clone(),
+                        value: status,
+                        options: vec![],
+                        editable: auth_type == "api", // API keys are editable, OAuth is not
+                    });
+                }
+            }
+        }
+    }
+
+    // Dynamically enumerate providers from config
     if let Some(providers) = val.get("provider").and_then(|p| p.as_object()) {
         for (name, prov) in providers {
             let opts = prov.get("options").unwrap_or(&serde_json::Value::Null);
@@ -579,8 +1162,17 @@ fn extract_openclaw_fields(val: &serde_json::Value) -> Vec<FieldEntry> {
                     key: format!("{} ▸ Models", name),
                     value: models_display,
                     options: vec![],
-                    ..Default::default()
+                    editable: false,
                 });
+            }
+        }
+    }
+
+    // Fallback: if no providers defined, collect models from agents.defaults.models
+    if all_model_ids.is_empty() {
+        if let Some(agent_models) = defaults.get("models").and_then(|m| m.as_object()) {
+            for model_key in agent_models.keys() {
+                all_model_ids.push(model_key.clone());
             }
         }
     }
@@ -643,6 +1235,8 @@ struct App {
     focus: Focus,
     editing: bool,
     edit_buf: String,
+    /// Byte offset into edit_buf; always on a char boundary.
+    edit_cursor: usize,
     selecting: bool,
     select_index: usize,
     select_options: Vec<String>,
@@ -653,13 +1247,15 @@ struct App {
 impl App {
     fn new() -> Self {
         let tools: Vec<ToolState> = ALL_TOOLS.iter().map(|t| ToolState::load(*t)).collect();
+        let first = tools.iter().position(|t| !t.fields.is_empty()).unwrap_or(0);
         App {
             tools,
-            tool_index: 0,
+            tool_index: first,
             field_index: 0,
             focus: Focus::ToolList,
             editing: false,
             edit_buf: String::new(),
+            edit_cursor: 0,
             selecting: false,
             select_index: 0,
             select_options: Vec::new(),
@@ -669,16 +1265,7 @@ impl App {
     }
 
     fn total_rows(&self) -> usize {
-        self.tools
-            .iter()
-            .map(|t| {
-                if t.fields.is_empty() {
-                    1
-                } else {
-                    t.fields.len()
-                }
-            })
-            .sum()
+        self.tools.iter().map(|t| t.fields.len()).sum()
     }
 
     fn flatten_index(&self) -> usize {
@@ -687,11 +1274,7 @@ impl App {
             if ti == self.tool_index {
                 return idx + self.field_index;
             }
-            idx += if tool.fields.is_empty() {
-                1
-            } else {
-                tool.fields.len()
-            };
+            idx += tool.fields.len();
         }
         idx
     }
@@ -699,11 +1282,10 @@ impl App {
     fn set_from_flat(&mut self, flat: usize) {
         let mut remaining = flat;
         for (ti, tool) in self.tools.iter().enumerate() {
-            let count = if tool.fields.is_empty() {
-                1
-            } else {
-                tool.fields.len()
-            };
+            let count = tool.fields.len();
+            if count == 0 {
+                continue;
+            }
             if remaining < count {
                 self.tool_index = ti;
                 self.field_index = remaining;
@@ -735,10 +1317,34 @@ impl App {
         if self.field_index >= tool.fields.len() {
             return;
         }
-        if !tool.fields[self.field_index].editable {
+        let field = &tool.fields[self.field_index];
+
+        // Show OAuth re-authentication command for non-editable auth fields
+        if !field.editable {
+            if field.key == "Auth" || (field.value.starts_with('✓') && !field.key.contains(" ▸ "))
+            {
+                let cmd = match tool.tool {
+                    Tool::OpenCode => Some("opencode auth"),
+                    Tool::Gemini => Some("gemini auth login"),
+                    Tool::Codex => Some("codex auth login"),
+                    Tool::Copilot => Some("gh auth login"),
+                    Tool::ClaudeCode => Some("claude auth login"),
+                    Tool::OpenClaw => None,
+                };
+
+                if let Some(auth_cmd) = cmd {
+                    self.open_in_terminal(auth_cmd);
+                } else {
+                    self.status_msg = Some("OpenClaw uses API keys, check config file".to_string());
+                }
+            } else if field.value.starts_with('✓') {
+                // OAuth provider in OpenCode auth.json (e.g., "openai", "google", "github-copilot")
+                let auth_cmd = format!("opencode auth add {}", field.key.as_str());
+                self.open_in_terminal(&auth_cmd);
+            }
             return;
         }
-        let field = &tool.fields[self.field_index];
+
         if !field.options.is_empty() {
             self.selecting = true;
             self.select_options = field.options.clone();
@@ -751,7 +1357,25 @@ impl App {
             return;
         }
         self.editing = true;
-        self.edit_buf = field.value.clone();
+
+        // For API Key fields, load the full key from auth.json (OpenCode) or config
+        self.edit_buf = if field.value == "—" {
+            // Empty placeholder
+            String::new()
+        } else if field.key.contains("API Key") && !field.key.contains(" ▸ ") {
+            // OpenCode provider API Key from opencode.json - keep masked value behavior
+            String::new()
+        } else if tool.tool == Tool::OpenCode
+            && !field.key.contains(" ▸ ")
+            && field.editable
+            && field.value.starts_with("✓")
+        {
+            // OpenCode auth.json API Key - load full key (editable API type fields)
+            get_opencode_api_key(&field.key).unwrap_or_else(String::new)
+        } else {
+            field.value.clone()
+        };
+        self.edit_cursor = self.edit_buf.len(); // Start cursor at end (always a valid byte boundary)
         self.focus = Focus::Editor;
     }
 
@@ -779,15 +1403,10 @@ impl App {
 
         let field_key = tool.fields[self.field_index].key.clone();
         match save_field(tool.tool, &field_key, &new_val) {
-            Ok(()) => {
-                self.status_msg = Some(format!("Saved {} → {}", field_key, new_val));
-                self.reload_current_tool();
-            }
-            Err(e) => {
-                self.status_msg = Some(format!("Save failed: {}", e));
-                self.reload_current_tool();
-            }
+            Ok(()) => self.status_msg = Some(format!("Saved {} → {}", field_key, new_val)),
+            Err(e) => self.status_msg = Some(format!("Save failed: {}", e)),
         }
+        self.reload_current_tool();
     }
 
     fn cancel_select(&mut self) {
@@ -808,39 +1427,25 @@ impl App {
         }
 
         let new_val = self.edit_buf.trim().to_string();
+        let field_key = tool.fields[self.field_index].key.clone();
+
+        // Empty input on API Key fields means cancel, not clear
+        if new_val.is_empty() && field_key.contains("API Key") {
+            return;
+        }
+
         let old_val = tool.fields[self.field_index].value.clone();
-        if new_val == old_val {
+        if new_val == old_val || (new_val.is_empty() && old_val == "—") {
             return;
         }
 
         tool.fields[self.field_index].value = new_val.clone();
 
-        let field_key = tool.fields[self.field_index].key.clone();
         match save_field(tool.tool, &field_key, &new_val) {
-            Ok(()) => {
-                self.status_msg = Some(format!("Saved {} → {}", field_key, new_val));
-
-                // Auto-sync Primary Model if a model env var was changed
-                if tool.tool == Tool::ClaudeCode
-                    && matches!(
-                        field_key.as_str(),
-                        "Models ▸ Sonnet" | "Models ▸ Opus" | "Models ▸ Haiku"
-                    )
-                {
-                    if let Some(base) = tool.fields.iter().find(|f| f.key == "Primary Model") {
-                        if base.value == old_val {
-                            let _ = save_field(Tool::ClaudeCode, "Primary Model", &new_val);
-                        }
-                    }
-                }
-
-                self.reload_current_tool();
-            }
-            Err(e) => {
-                self.status_msg = Some(format!("Save failed: {}", e));
-                self.reload_current_tool();
-            }
+            Ok(()) => self.status_msg = Some(format!("Saved {} → {}", field_key, new_val)),
+            Err(e) => self.status_msg = Some(format!("Save failed: {}", e)),
         }
+        self.reload_current_tool();
     }
 
     fn reload_current_tool(&mut self) {
@@ -854,14 +1459,6 @@ impl App {
         self.focus = Focus::ToolList;
     }
 
-    fn sync_theme(&mut self) {
-        match sync_kaku_theme() {
-            Ok(msg) => self.status_msg = Some(msg),
-            Err(e) => self.status_msg = Some(format!("Theme sync failed: {}", e)),
-        }
-        self.tools = ALL_TOOLS.iter().map(|t| ToolState::load(*t)).collect();
-    }
-
     fn open_config(&self) {
         let tool = &self.tools[self.tool_index];
         let path = tool.tool.config_path();
@@ -872,9 +1469,65 @@ impl App {
             .arg(&path)
             .status();
     }
+
+    fn refresh_models(&mut self) {
+        // Delete cache to force re-fetch
+        let cache_path = config::HOME_DIR
+            .join(".cache")
+            .join("kaku")
+            .join("models.json");
+        let _ = std::fs::remove_file(&cache_path);
+
+        match fetch_models_dev_json() {
+            Some(_) => {
+                self.tools = ALL_TOOLS.iter().map(|t| ToolState::load(*t)).collect();
+                self.status_msg = Some("Models refreshed".into());
+            }
+            None => {
+                self.status_msg = Some("Refresh failed (network error)".into());
+            }
+        }
+    }
+
+    /// Open a shell command in a new Kaku tab (preferred) or fall back to Terminal.app.
+    fn open_in_terminal(&mut self, cmd: &str) {
+        // Prefer a new tab in the current Kaku window.
+        // kaku cli spawn reads WEZTERM_PANE from the environment to target the right window.
+        // Append `exec $SHELL` so the pane stays alive after the command finishes.
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        let shell_cmd = format!("{}; exec \"{}\"", cmd, shell);
+        let kaku_status = std::process::Command::new("kaku")
+            .args(["cli", "spawn", "--", &shell, "-c", &shell_cmd])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if kaku_status.as_ref().is_ok_and(|status| status.success()) {
+            self.status_msg = Some("Opening in new Kaku tab...".into());
+            return;
+        }
+
+        // Fallback: open in macOS Terminal.app via osascript.
+        let script = format!("tell application \"Terminal\" to do script \"{}\"", cmd);
+        match std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+        {
+            Ok(_) => self.status_msg = Some("Opening in new terminal window...".into()),
+            Err(_) => {
+                self.status_msg = Some(format!("Failed to open terminal. Run '{}' manually", cmd))
+            }
+        }
+    }
 }
 
 fn save_field(tool: Tool, field_key: &str, new_val: &str) -> anyhow::Result<()> {
+    // Codex uses TOML; delegate immediately before any JSON parsing attempt.
+    if tool == Tool::Codex {
+        return save_codex_field(field_key, new_val);
+    }
+
     let path = tool.config_path();
     if !path.exists() {
         anyhow::bail!("config file not found: {}", path.display());
@@ -886,26 +1539,57 @@ fn save_field(tool: Tool, field_key: &str, new_val: &str) -> anyhow::Result<()> 
         .with_context(|| format!("parse {}", path.display()))?;
 
     match tool {
+        Tool::Gemini => {
+            if field_key == "Model" {
+                if let Some(obj) = parsed.as_object_mut() {
+                    if new_val == "—" || new_val.is_empty() {
+                        obj.remove("model");
+                    } else {
+                        let keep_string_shape = obj.get("model").is_some_and(|m| m.is_string());
+                        if keep_string_shape {
+                            obj.insert(
+                                "model".to_string(),
+                                serde_json::Value::String(new_val.to_string()),
+                            );
+                        } else {
+                            obj.insert("model".to_string(), serde_json::json!({"name": new_val}));
+                        }
+                    }
+                }
+            } else {
+                return Ok(());
+            }
+        }
+        Tool::Copilot => {
+            if field_key == "Model" {
+                if let Some(obj) = parsed.as_object_mut() {
+                    if new_val == "—" || new_val.is_empty() {
+                        obj.remove("model");
+                    } else {
+                        obj.insert(
+                            "model".to_string(),
+                            serde_json::Value::String(new_val.to_string()),
+                        );
+                    }
+                }
+            } else {
+                return Ok(());
+            }
+        }
         Tool::ClaudeCode => {
-            // Some fields are top-level, others live inside "env"
             let env_key = match field_key {
-                "Models ▸ Sonnet" => Some("ANTHROPIC_DEFAULT_SONNET_MODEL"),
-                "Models ▸ Opus" => Some("ANTHROPIC_DEFAULT_OPUS_MODEL"),
-                "Models ▸ Haiku" => Some("ANTHROPIC_DEFAULT_HAIKU_MODEL"),
                 "Base URL" => Some("ANTHROPIC_BASE_URL"),
                 "API Key" => Some("ANTHROPIC_AUTH_TOKEN"),
                 _ => None,
             };
             let top_key = match field_key {
-                "Primary Model" => Some("model"),
+                "Model" => Some("model"),
                 _ => None,
             };
 
             if let Some(ek) = env_key {
                 let obj = parsed.as_object_mut().context("root is not object")?;
-                let env = obj
-                    .entry("env")
-                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                let env = obj.entry("env").or_insert_with(|| serde_json::json!({}));
                 if let Some(env_obj) = env.as_object_mut() {
                     if new_val == "—" || new_val.is_empty() {
                         env_obj.remove(ek);
@@ -932,11 +1616,8 @@ fn save_field(tool: Tool, field_key: &str, new_val: &str) -> anyhow::Result<()> 
             }
         }
         Tool::OpenCode => {
-            // Top-level fields
             let top_key = match field_key {
-                "Primary Model" => Some("model"),
-                "Small Model" => Some("small_model"),
-                "Theme" => Some("theme"),
+                "Model" => Some("model"),
                 _ => None,
             };
 
@@ -986,6 +1667,45 @@ fn save_field(tool: Tool, field_key: &str, new_val: &str) -> anyhow::Result<()> 
                     }
                 }
             } else {
+                // Auth.json provider API keys (field_key is provider name like "kimi-for-coding")
+                let auth_path = config::HOME_DIR
+                    .join(".local")
+                    .join("share")
+                    .join("opencode")
+                    .join("auth.json");
+
+                if !auth_path.exists() {
+                    return Ok(());
+                }
+
+                let auth_raw = std::fs::read_to_string(&auth_path)
+                    .with_context(|| format!("read {}", auth_path.display()))?;
+                let mut auth_parsed: serde_json::Value = serde_json::from_str(&auth_raw)
+                    .with_context(|| format!("parse {}", auth_path.display()))?;
+
+                if let Some(auth_obj) = auth_parsed.as_object_mut() {
+                    if let Some(provider) = auth_obj.get_mut(field_key) {
+                        if let Some(provider_obj) = provider.as_object_mut() {
+                            // Check if this is an API type provider
+                            if provider_obj.get("type").and_then(|v| v.as_str()) == Some("api") {
+                                if new_val == "—" || new_val.is_empty() {
+                                    provider_obj.remove("key");
+                                } else {
+                                    provider_obj.insert(
+                                        "key".to_string(),
+                                        serde_json::Value::String(new_val.to_string()),
+                                    );
+                                }
+
+                                // Save to auth.json
+                                let output = serde_json::to_string_pretty(&auth_parsed)
+                                    .context("serialize auth.json")?;
+                                std::fs::write(&auth_path, output.as_bytes())
+                                    .with_context(|| format!("write {}", auth_path.display()))?;
+                            }
+                        }
+                    }
+                }
                 return Ok(());
             }
         }
@@ -1109,6 +1829,7 @@ fn save_field(tool: Tool, field_key: &str, new_val: &str) -> anyhow::Result<()> 
                 return Ok(());
             }
         }
+        Tool::Codex => unreachable!("Codex is handled before JSON parsing"),
     }
 
     let output = serde_json::to_string_pretty(&parsed).context("serialize config")?;
@@ -1117,42 +1838,62 @@ fn save_field(tool: Tool, field_key: &str, new_val: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
-fn sync_kaku_theme() -> anyhow::Result<String> {
-    let opencode_dir = config::HOME_DIR.join(".config").join("opencode");
-    let themes_dir = opencode_dir.join("themes");
-    config::create_user_owned_dirs(&opencode_dir).context("create opencode config dir")?;
-    config::create_user_owned_dirs(&themes_dir).context("create opencode themes dir")?;
+/// Save a field to Codex TOML config (~/.codex/config.toml)
+fn save_codex_field(field_key: &str, new_val: &str) -> anyhow::Result<()> {
+    let path = Tool::Codex.config_path();
+    save_codex_field_at(&path, field_key, new_val)
+}
 
-    let theme_content = super::OPENCODE_THEME_JSON;
-    let theme_file = themes_dir.join("wezterm-match.json");
-    std::fs::write(&theme_file, theme_content).context("write opencode theme")?;
+fn save_codex_field_at(path: &Path, field_key: &str, new_val: &str) -> anyhow::Result<()> {
+    let toml_key = match field_key {
+        "Model" => "model",
+        "Reasoning Effort" => "model_reasoning_effort",
+        _ => return Ok(()),
+    };
 
-    let config_path = opencode_dir.join("opencode.json");
-    if !config_path.exists() {
-        let config_content = "{\n  \"theme\": \"wezterm-match\"\n}\n";
-        std::fs::write(&config_path, config_content).context("write opencode config")?;
+    let raw = if path.exists() {
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?
     } else {
-        let raw = std::fs::read_to_string(&config_path).context("read opencode config")?;
-        let mut parsed: serde_json::Value = serde_json::from_str(&raw)
-            .or_else(|_| serde_json::from_str(&strip_jsonc_comments(&raw)))
-            .unwrap_or_default();
-        if let Some(obj) = parsed.as_object_mut() {
-            obj.insert(
-                "theme".into(),
-                serde_json::Value::String("wezterm-match".into()),
-            );
+        String::new()
+    };
+
+    let mut lines: Vec<String> = raw.lines().map(|l| l.to_string()).collect();
+    let target = format!("{} = ", toml_key);
+    let new_line = format!("{} = \"{}\"", toml_key, new_val);
+
+    let mut found = false;
+    for line in &mut lines {
+        if line.trim_start().starts_with(&target) {
+            if new_val == "—" || new_val.is_empty() {
+                *line = String::new();
+            } else {
+                *line = new_line.clone();
+            }
+            found = true;
+            break;
         }
-        let output = serde_json::to_string_pretty(&parsed).context("serialize")?;
-        std::fs::write(&config_path, output).context("write opencode config")?;
     }
 
-    Ok("Kaku theme synced to OpenCode".into())
+    if !found && !new_val.is_empty() && new_val != "—" {
+        // Insert before the first [section] or at the end
+        let insert_pos = lines
+            .iter()
+            .position(|l| l.trim_start().starts_with('['))
+            .unwrap_or(lines.len());
+        lines.insert(insert_pos, new_line);
+    }
+
+    // Remove empty lines that resulted from deletion
+    let output: Vec<&str> = lines.iter().map(|l| l.as_str()).collect();
+    let result = output.join("\n");
+    std::fs::write(path, result.as_bytes()).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
 }
 
 pub fn run() -> anyhow::Result<()> {
     enable_raw_mode().context("enable raw mode")?;
     let mut stdout = io::stdout();
-    crossterm::execute!(stdout, EnterAlternateScreen).context("enter alternate screen")?;
+    crossterm::execute!(stdout, EnableMouseCapture).context("enable mouse capture")?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("create terminal")?;
 
@@ -1160,8 +1901,8 @@ pub fn run() -> anyhow::Result<()> {
     let result = run_loop(&mut terminal, &mut app);
 
     disable_raw_mode().context("disable raw mode")?;
-    crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)
-        .context("leave alternate screen")?;
+    crossterm::execute!(terminal.backend_mut(), DisableMouseCapture)
+        .context("disable mouse capture")?;
     terminal.show_cursor().context("show cursor")?;
 
     result
@@ -1172,57 +1913,108 @@ fn run_loop(
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
-        terminal.draw(|frame| ui(frame, app))?;
+        terminal.draw(|frame| ui::ui(frame, app))?;
 
-        if let Event::Key(key) = event::read().context("read event")? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
+        match event::read().context("read event")? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                app.status_msg = None;
+                if app.selecting {
+                    match key.code {
+                        KeyCode::Enter => app.confirm_select(),
+                        KeyCode::Esc => app.cancel_select(),
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            if app.select_index > 0 {
+                                app.select_index -= 1;
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if app.select_index + 1 < app.select_options.len() {
+                                app.select_index += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
 
-            if app.selecting {
+                if app.editing {
+                    match key.code {
+                        KeyCode::Enter => app.confirm_edit(),
+                        KeyCode::Esc => app.cancel_edit(),
+                        KeyCode::Left => {
+                            if app.edit_cursor > 0 {
+                                app.edit_cursor =
+                                    prev_char_boundary(&app.edit_buf, app.edit_cursor);
+                            }
+                        }
+                        KeyCode::Right => {
+                            if app.edit_cursor < app.edit_buf.len() {
+                                app.edit_cursor =
+                                    next_char_boundary(&app.edit_buf, app.edit_cursor);
+                            }
+                        }
+                        KeyCode::Home => {
+                            app.edit_cursor = 0;
+                        }
+                        KeyCode::End => {
+                            app.edit_cursor = app.edit_buf.len();
+                        }
+                        KeyCode::Backspace => {
+                            if key.modifiers.contains(KeyModifiers::CONTROL)
+                                || key.modifiers.contains(KeyModifiers::SUPER)
+                            {
+                                // Cmd+Backspace (macOS) or Ctrl+Backspace - clear all
+                                app.edit_buf.clear();
+                                app.edit_cursor = 0;
+                            } else if app.edit_cursor > 0 {
+                                edit_backspace(&mut app.edit_buf, &mut app.edit_cursor);
+                            }
+                        }
+                        KeyCode::Delete => {
+                            if app.edit_cursor < app.edit_buf.len() {
+                                edit_delete(&mut app.edit_buf, app.edit_cursor);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            // Handle Ctrl+U (clear line) - macOS Cmd+Backspace may also send this
+                            if (key.modifiers.contains(KeyModifiers::CONTROL)
+                                || key.modifiers.contains(KeyModifiers::SUPER))
+                                && c == 'u'
+                            {
+                                app.edit_buf.clear();
+                                app.edit_cursor = 0;
+                            }
+                            // Ignore other control characters
+                            else if !key.modifiers.contains(KeyModifiers::CONTROL)
+                                && !key.modifiers.contains(KeyModifiers::SUPER)
+                            {
+                                edit_insert_char(&mut app.edit_buf, &mut app.edit_cursor, c);
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 match key.code {
-                    KeyCode::Enter => app.confirm_select(),
-                    KeyCode::Esc => app.cancel_select(),
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        if app.select_index > 0 {
-                            app.select_index -= 1;
-                        }
+                    KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.should_quit = true
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        if app.select_index + 1 < app.select_options.len() {
-                            app.select_index += 1;
-                        }
-                    }
+                    KeyCode::Up | KeyCode::Char('k') => app.move_up(),
+                    KeyCode::Down | KeyCode::Char('j') => app.move_down(),
+                    KeyCode::Enter => app.start_edit(),
+                    KeyCode::Char('o') => app.open_config(),
+                    KeyCode::Char('r') => app.refresh_models(),
                     _ => {}
                 }
-                continue;
             }
-
-            if app.editing {
-                match key.code {
-                    KeyCode::Enter => app.confirm_edit(),
-                    KeyCode::Esc => app.cancel_edit(),
-                    KeyCode::Backspace => {
-                        app.edit_buf.pop();
-                    }
-                    KeyCode::Char(c) => app.edit_buf.push(c),
-                    _ => {}
-                }
-                continue;
-            }
-
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.should_quit = true
-                }
-                KeyCode::Up | KeyCode::Char('k') => app.move_up(),
-                KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                KeyCode::Enter => app.start_edit(),
-                KeyCode::Char('t') => app.sync_theme(),
-                KeyCode::Char('o') => app.open_config(),
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::ScrollUp => app.move_up(),
+                MouseEventKind::ScrollDown => app.move_down(),
                 _ => {}
-            }
+            },
+            _ => {}
         }
 
         if app.should_quit {
@@ -1231,251 +2023,120 @@ fn run_loop(
     }
 }
 
-fn ui(frame: &mut ratatui::Frame, app: &mut App) {
-    let area = frame.area();
-
-    let outer = Block::default()
-        .title(Line::from(vec![
-            Span::styled(
-                " Kaku ",
-                Style::default().fg(PURPLE()).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("AI Tools ", Style::default().fg(TEXT())),
-        ]))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PURPLE()))
-        .style(Style::default().bg(BG()));
-    let inner = outer.inner(area);
-    frame.render_widget(outer, area);
-
-    let chunks = Layout::vertical([Constraint::Min(6), Constraint::Length(1)]).split(inner);
-
-    render_tools(frame, chunks[0], app);
-    render_status_bar(frame, chunks[1], app);
-
-    if app.selecting {
-        render_selector(frame, area, app);
-    } else if app.editing {
-        render_editor(frame, area, app);
+fn prev_char_boundary(buf: &str, cursor: usize) -> usize {
+    let cursor = cursor.min(buf.len());
+    if cursor == 0 {
+        return 0;
     }
+    buf[..cursor]
+        .char_indices()
+        .next_back()
+        .map(|(i, _)| i)
+        .unwrap_or(0)
 }
 
-fn render_tools(frame: &mut ratatui::Frame, area: Rect, app: &App) {
-    let mut items: Vec<ListItem> = Vec::new();
-    let mut selected_flat: Option<usize> = None;
-    let mut flat = 0usize;
-
-    for (ti, tool) in app.tools.iter().enumerate() {
-        let is_current_tool = ti == app.tool_index;
-        let path_str = tool.tool.config_path().display().to_string();
-        let home = config::HOME_DIR.display().to_string();
-        let short_path = path_str.replace(&home, "~");
-
-        let tool_style = if tool.installed {
-            Style::default().fg(GREEN()).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(MUTED())
-        };
-
-        let header = Line::from(vec![
-            Span::styled(
-                if is_current_tool { "▸ " } else { "  " },
-                Style::default().fg(PURPLE()),
-            ),
-            Span::styled(tool.tool.label(), tool_style),
-            Span::styled("  ", Style::default()),
-            Span::styled(short_path.clone(), Style::default().fg(MUTED())),
-            if !tool.installed {
-                Span::styled("  (not installed)", Style::default().fg(MUTED()))
-            } else {
-                Span::raw("")
-            },
-        ]);
-        items.push(ListItem::new(header));
-        if is_current_tool && app.field_index == 0 && tool.fields.is_empty() {
-            selected_flat = Some(flat);
-        }
-        flat += 1;
-
-        for (fi, field) in tool.fields.iter().enumerate() {
-            let is_selected = is_current_tool && fi == app.field_index;
-            if is_selected {
-                selected_flat = Some(flat);
-            }
-
-            let marker = if is_selected { "▸" } else { "├" };
-            let last = fi == tool.fields.len() - 1;
-            let connector = if last && !is_selected { "└" } else { marker };
-
-            let val_color = if field.value.starts_with('✓') {
-                GREEN()
-            } else if field.value.starts_with('✗') {
-                RED()
-            } else if field.value == "—" {
-                MUTED()
-            } else {
-                YELLOW()
-            };
-
-            // Detect sub-fields (keys with " ▸ ") for hierarchical display
-            let (display_key, extra_indent) = if let Some(pos) = field.key.find(" ▸ ") {
-                (format!("▸ {}", &field.key[pos + " ▸ ".len()..]), true)
-            } else {
-                (field.key.clone(), false)
-            };
-
-            let indent_str = if extra_indent { "    │  " } else { "    " };
-            let key_width = if extra_indent { 21 } else { 24 };
-
-            let line = Line::from(vec![
-                Span::styled(indent_str, Style::default().fg(MUTED())),
-                Span::styled(
-                    connector,
-                    Style::default().fg(if is_selected { PURPLE() } else { MUTED() }),
-                ),
-                Span::styled(
-                    "─ ",
-                    Style::default().fg(if is_selected { PURPLE() } else { MUTED() }),
-                ),
-                Span::styled(
-                    format!("{:<width$}", display_key, width = key_width),
-                    Style::default().fg(TEXT()),
-                ),
-                Span::styled(&field.value, Style::default().fg(val_color)),
-            ]);
-
-            items.push(ListItem::new(line));
-            flat += 1;
-        }
-
-        items.push(ListItem::new(Line::raw("")));
-        flat += 1;
+fn next_char_boundary(buf: &str, cursor: usize) -> usize {
+    let cursor = cursor.min(buf.len());
+    if cursor >= buf.len() {
+        return buf.len();
     }
-
-    let mut state = ListState::default();
-    state.select(selected_flat);
-
-    let list = List::new(items).highlight_style(Style::default().bg(PANEL()));
-
-    frame.render_stateful_widget(list, area, &mut state);
+    cursor + buf[cursor..].chars().next().map_or(0, |c| c.len_utf8())
 }
 
-fn render_status_bar(frame: &mut ratatui::Frame, area: Rect, app: &App) {
-    let status = if let Some(msg) = &app.status_msg {
-        Line::from(vec![
-            Span::styled(" ℹ ", Style::default().fg(GREEN())),
-            Span::styled(msg.as_str(), Style::default().fg(TEXT())),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled(" ↑↓", Style::default().fg(PURPLE())),
-            Span::styled(" Navigate  ", Style::default().fg(MUTED())),
-            Span::styled("Enter", Style::default().fg(PURPLE())),
-            Span::styled(" Edit  ", Style::default().fg(MUTED())),
-            Span::styled("t", Style::default().fg(PURPLE())),
-            Span::styled(" Sync Theme  ", Style::default().fg(MUTED())),
-            Span::styled("o", Style::default().fg(PURPLE())),
-            Span::styled(" Open File  ", Style::default().fg(MUTED())),
-            Span::styled("q", Style::default().fg(PURPLE())),
-            Span::styled(" Quit", Style::default().fg(MUTED())),
-        ])
-    };
-
-    frame.render_widget(Paragraph::new(status), area);
-}
-
-fn render_editor(frame: &mut ratatui::Frame, area: Rect, app: &App) {
-    let tool = &app.tools[app.tool_index];
-    if app.field_index >= tool.fields.len() {
+fn edit_backspace(buf: &mut String, cursor: &mut usize) {
+    if *cursor == 0 || buf.is_empty() {
         return;
     }
-    let field = &tool.fields[app.field_index];
-
-    let popup_width = 50u16.min(area.width.saturating_sub(4));
-    let popup_height = 5u16;
-    let popup = Rect::new(
-        (area.width.saturating_sub(popup_width)) / 2,
-        (area.height.saturating_sub(popup_height)) / 2,
-        popup_width,
-        popup_height,
-    );
-
-    frame.render_widget(Clear, popup);
-
-    let block = Block::default()
-        .title(Line::from(vec![
-            Span::styled(" Edit: ", Style::default().fg(PURPLE())),
-            Span::styled(&field.key, Style::default().fg(TEXT())),
-            Span::raw(" "),
-        ]))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PURPLE()))
-        .style(Style::default().bg(BG()));
-
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-
-    let input = Paragraph::new(Line::from(vec![
-        Span::styled(&app.edit_buf, Style::default().fg(TEXT())),
-        Span::styled("▏", Style::default().fg(PURPLE())),
-    ]));
-    frame.render_widget(input, inner.inner(Margin::new(1, 1)));
+    let prev = prev_char_boundary(buf, *cursor);
+    buf.remove(prev);
+    *cursor = prev;
 }
 
-fn render_selector(frame: &mut ratatui::Frame, area: Rect, app: &App) {
-    let tool = &app.tools[app.tool_index];
-    if app.field_index >= tool.fields.len() {
+fn edit_delete(buf: &mut String, cursor: usize) {
+    if cursor >= buf.len() || buf.is_empty() {
         return;
     }
-    let field = &tool.fields[app.field_index];
+    buf.remove(cursor);
+}
 
-    let option_count = app.select_options.len() as u16;
-    let popup_width = 60u16.min(area.width.saturating_sub(4));
-    let popup_height = (option_count + 2).min(area.height.saturating_sub(4));
-    let popup = Rect::new(
-        (area.width.saturating_sub(popup_width)) / 2,
-        (area.height.saturating_sub(popup_height)) / 2,
-        popup_width,
-        popup_height,
-    );
+fn edit_insert_char(buf: &mut String, cursor: &mut usize, c: char) {
+    let at = (*cursor).min(buf.len());
+    buf.insert(at, c);
+    *cursor = at + c.len_utf8();
+}
 
-    frame.render_widget(Clear, popup);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
 
-    let block = Block::default()
-        .title(Line::from(vec![
-            Span::styled(" Select: ", Style::default().fg(PURPLE())),
-            Span::styled(&field.key, Style::default().fg(TEXT())),
-            Span::raw(" "),
-        ]))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PURPLE()))
-        .style(Style::default().bg(BG()));
+    #[test]
+    fn codex_save_round_trip_for_model_and_reasoning_effort() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("config.toml");
 
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
+        std::fs::write(
+            &path,
+            "model = \"old\"\nmodel_reasoning_effort = \"low\"\n\n[projects.\"/tmp\"]\ntrust_level = \"trusted\"\n",
+        )
+        .expect("seed config");
 
-    let items: Vec<ListItem> = app
-        .select_options
-        .iter()
-        .enumerate()
-        .map(|(i, opt)| {
-            let is_sel = i == app.select_index;
-            let marker = if is_sel { "▸ " } else { "  " };
-            let style = if is_sel {
-                Style::default().fg(PURPLE()).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(TEXT())
-            };
-            ListItem::new(Line::from(vec![
-                Span::styled(marker, Style::default().fg(PURPLE())),
-                Span::styled(opt.as_str(), style),
-            ]))
-        })
-        .collect();
+        save_codex_field_at(&path, "Model", "gpt-5").expect("update model");
+        save_codex_field_at(&path, "Reasoning Effort", "high").expect("update effort");
+        let saved = std::fs::read_to_string(&path).expect("read config");
+        assert!(saved.contains("model = \"gpt-5\""));
+        assert!(saved.contains("model_reasoning_effort = \"high\""));
+        assert!(saved.contains("[projects.\"/tmp\"]"));
 
-    let mut state = ListState::default();
-    state.select(Some(app.select_index));
+        save_codex_field_at(&path, "Model", "").expect("remove model");
+        let saved = std::fs::read_to_string(&path).expect("read config");
+        assert!(!saved.contains("model = \"gpt-5\""));
+        assert!(saved.contains("model_reasoning_effort = \"high\""));
+        assert!(saved.contains("[projects.\"/tmp\"]"));
+    }
 
-    let list = List::new(items).highlight_style(Style::default().bg(PANEL()));
-    frame.render_stateful_widget(list, inner, &mut state);
+    #[test]
+    fn codex_save_creates_new_top_level_entry_before_sections() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[profiles.default]\nfoo = \"bar\"\n").expect("seed config");
+
+        save_codex_field_at(&path, "Model", "gpt-5").expect("insert model");
+        let saved = std::fs::read_to_string(&path).expect("read config");
+        let model_pos = saved.find("model = \"gpt-5\"").expect("model line");
+        let section_pos = saved.find("[profiles.default]").expect("section");
+        assert!(model_pos < section_pos);
+    }
+
+    #[test]
+    fn unicode_edit_helpers_keep_cursor_on_char_boundaries() {
+        let mut buf = "你a好".to_string();
+        let mut cursor = buf.len();
+
+        cursor = prev_char_boundary(&buf, cursor);
+        assert_eq!(cursor, "你a".len());
+        cursor = prev_char_boundary(&buf, cursor);
+        assert_eq!(cursor, "你".len());
+        cursor = prev_char_boundary(&buf, cursor);
+        assert_eq!(cursor, 0);
+
+        cursor = next_char_boundary(&buf, cursor);
+        assert_eq!(cursor, "你".len());
+        cursor = next_char_boundary(&buf, cursor);
+        assert_eq!(cursor, "你a".len());
+
+        edit_insert_char(&mut buf, &mut cursor, '界');
+        assert_eq!(buf, "你a界好");
+        assert_eq!(cursor, "你a界".len());
+
+        edit_backspace(&mut buf, &mut cursor);
+        assert_eq!(buf, "你a好");
+        assert_eq!(cursor, "你a".len());
+
+        cursor = prev_char_boundary(&buf, cursor);
+        assert_eq!(cursor, "你".len());
+        edit_delete(&mut buf, cursor);
+        assert_eq!(buf, "你好");
+        assert_eq!(cursor, "你".len());
+    }
 }

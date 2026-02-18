@@ -72,6 +72,7 @@ pub const OPENCODE_THEME_JSON: &str = r##"{
 }
 "##;
 
+mod theme;
 mod tui;
 
 use anyhow::Context;

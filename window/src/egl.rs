@@ -415,15 +415,18 @@ impl GlState {
         ];
 
         if cfg!(target_os = "macos") {
-            // On macOS, let's look in the application directory to see
-            // if we've deployed libEGL.dylib alongside; if so, we want
-            // to try loading that.
-            paths.push(
-                std::env::current_exe()?
-                    .parent()
-                    .ok_or_else(|| anyhow!("current_exe isn't in a directory!?"))?
-                    .join("libEGL.dylib"),
-            );
+            let exe_parent = std::env::current_exe()?
+                .parent()
+                .ok_or_else(|| anyhow!("current_exe isn't in a directory!?"))?
+                .to_path_buf();
+
+            // Dev/debug layout: next to the executable.
+            paths.push(exe_parent.join("libEGL.dylib"));
+
+            // App bundle layout: Kaku.app/Contents/Frameworks/libEGL.dylib.
+            if let Some(contents_dir) = exe_parent.parent() {
+                paths.push(contents_dir.join("Frameworks").join("libEGL.dylib"));
+            }
 
             // And just in case, let's also allow loading via
             // DYLD_LIBRARY_PATH

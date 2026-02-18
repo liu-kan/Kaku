@@ -4,13 +4,36 @@ add_newline = false
 command_timeout = 10000
 
 [directory]
-truncate_to_repo=true
-truncation_length=2
+truncate_to_repo = true
+truncation_length = 2
+# Remove trailing space (default has one outside styled group).
+# The [character] module provides the sole trailing space.
+format = "[$path]($style)[$read_only]($read_only_style)"
 
 [character]
-success_symbol = ""
-error_symbol = ""
+success_symbol = " "
+error_symbol = " "
 format = "$symbol"
+
+# Modules whose default format places trailing space OUTSIDE styled group:
+# override to remove it, preventing double-space with character.
+[git_branch]
+format = " on [$symbol$branch(:$remote_branch)]($style)"
+
+[git_status]
+format = "([\\[$all_status$ahead_behind\\]]($style))"
+
+[package]
+format = "is [$symbol$version]($style)"
+
+[cmd_duration]
+format = "took [$duration]($style)"
+
+# Modules whose default format places trailing space INSIDE styled group
+# (e.g. bun, rust): override to also remove it, so only [character] provides
+# the trailing space.
+[rust]
+format = "via [$symbol($version)]($style)"
 
 [line_break]
 disabled = true

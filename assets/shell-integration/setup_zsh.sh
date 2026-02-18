@@ -179,13 +179,14 @@ SAVEHIST="\${SAVEHIST:-50000}"
 if [[ -z "\${HISTFILE:-}" ]]; then
     HISTFILE="\${ZDOTDIR:-\$HOME}/.zsh_history"
 fi
-setopt HIST_FIND_NO_DUPS         # Do not display a line previously found
+setopt HIST_IGNORE_ALL_DUPS      # Remove older duplicate when new entry is added
+setopt HIST_FIND_NO_DUPS         # Do not display duplicates when searching history
+setopt HIST_REDUCE_BLANKS        # Remove blank lines from history
+setopt HIST_IGNORE_SPACE         # Skip commands that start with a space
 setopt SHARE_HISTORY             # Share history between all sessions
 setopt APPEND_HISTORY            # Append history to the history file (no overwriting)
 setopt INC_APPEND_HISTORY        # Write each command to history file immediately
 setopt EXTENDED_HISTORY          # Include timestamps in saved history
-unsetopt HIST_IGNORE_DUPS        # Keep duplicate commands for complete history
-unsetopt HIST_IGNORE_SPACE       # Keep commands that begin with a space
 
 # Set default Zsh options
 setopt interactive_comments
@@ -289,10 +290,35 @@ if [[ -f "\$KAKU_ZSH_DIR/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting
 fi
 
 # Auto-set TERM to xterm-256color for SSH connections when running under kaku,
-# since remote hosts typically lack the kaku terminfo entry
-if [[ "\$TERM" == "kaku" ]]; then
-    ssh() { TERM=xterm-256color command ssh "\$@"; }
-fi
+# since remote hosts typically lack the kaku terminfo entry.
+# Also auto-detect 1Password SSH agent and add IdentitiesOnly=yes to prevent
+# "Too many authentication failures" caused by 1Password offering all stored keys.
+# Set KAKU_SSH_SKIP_1PASSWORD_FIX=1 to disable the 1Password behavior.
+ssh() {
+    local -a extra_opts=()
+
+    # 1Password SSH agent fix: auto-add IdentitiesOnly=yes to prevent
+    # "Too many authentication failures" when 1Password offers all stored keys.
+    # Set KAKU_SSH_SKIP_1PASSWORD_FIX=1 to disable.
+    if [[ -z "\${KAKU_SSH_SKIP_1PASSWORD_FIX-}" ]]; then
+        local sock="\${SSH_AUTH_SOCK:-}"
+        if [[ "\$sock" == *1password* || "\$sock" == *2BUA8C4S2C* ]]; then
+            local has_identitiesonly=false prev=""
+            for arg in "\$@"; do
+                [[ "\$prev" == "-o" && "\$arg" == IdentitiesOnly=* ]] && has_identitiesonly=true
+                [[ "\$arg" == -oIdentitiesOnly=* ]] && has_identitiesonly=true
+                prev="\$arg"
+            done
+            \$has_identitiesonly || extra_opts+=(-o "IdentitiesOnly=yes")
+        fi
+    fi
+
+    if [[ "\$TERM" == "kaku" ]]; then
+        TERM=xterm-256color command ssh "\${extra_opts[@]}" "\$@"
+    else
+        command ssh "\${extra_opts[@]}" "\$@"
+    fi
+}
 EOF
 
 echo -e "  ${GREEN}✓${NC} ${BOLD}Script${NC}      Generated kaku.zsh init script"

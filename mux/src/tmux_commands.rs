@@ -6,11 +6,13 @@ use crate::tmux::{AttachState, TmuxDomain, TmuxDomainState, TmuxRemotePane, Tmux
 use crate::tmux_pty::{TmuxChild, TmuxPty};
 use crate::{Mux, MuxNotification, Pane};
 use anyhow::{anyhow, Context};
+use config::keyassignment::PaneEncoding;
 use parking_lot::{Condvar, Mutex};
 use portable_pty::{MasterPty, PtySize};
 use std::collections::HashSet;
 use std::fmt::{Debug, Write};
 use std::io::Write as _;
+use std::sync::atomic::AtomicU8;
 use std::sync::Arc;
 use termwiz::escape::csi::{Cursor, CSI};
 use termwiz::escape::{Action, OneBased};
@@ -51,6 +53,10 @@ struct WindowItem {
 }
 
 impl TmuxDomainState {
+    fn pane_encoding_for_spawn(spawn_encoding: Option<PaneEncoding>) -> PaneEncoding {
+        spawn_encoding.unwrap_or_else(|| config::configuration().default_encoding)
+    }
+
     /// check if a PaneItem received from ListAllPanes has been attached
     pub fn check_pane_attached(&self, window_id: TmuxWindowId, pane_id: TmuxPaneId) -> bool {
         let gui_tabs = self.gui_tabs.lock();
@@ -166,7 +172,11 @@ impl TmuxDomainState {
         ))]);
     }
 
-    fn create_pane(&self, pane: &PaneItem) -> anyhow::Result<Arc<dyn Pane>> {
+    fn create_pane(
+        &self,
+        pane: &PaneItem,
+        spawn_encoding: Option<PaneEncoding>,
+    ) -> anyhow::Result<Arc<dyn Pane>> {
         let local_pane_id = alloc_pane_id();
         let active_lock = Arc::new((Mutex::new(false), Condvar::new()));
         let (output_read, output_write) = filedescriptor::socketpair()?;
@@ -197,7 +207,9 @@ impl TmuxDomainState {
             master_pane: ref_pane,
         };
 
-        let writer = WriterWrapper::new(pane_pty.take_writer()?);
+        let pane_encoding = Self::pane_encoding_for_spawn(spawn_encoding);
+        let encoding = Arc::new(AtomicU8::new(pane_encoding.to_u8()));
+        let writer = WriterWrapper::new(pane_pty.take_writer()?, Arc::clone(&encoding));
 
         let size = TerminalSize {
             rows: pane.pane_height as usize,
@@ -226,6 +238,7 @@ impl TmuxDomainState {
             Box::new(pane_pty),
             Box::new(writer),
             self.domain_id,
+            encoding,
             "tmux pane".to_string(),
         )))
     }
@@ -276,7 +289,9 @@ impl TmuxDomainState {
             pane_active: false,
         };
 
-        let pane = self.create_pane(&p).context("failed to create pane")?;
+        let pane = self
+            .create_pane(&p, None)
+            .context("failed to create pane")?;
         tab.split_and_insert(pane_index, split_request, Arc::clone(&pane))?;
 
         self.add_attached_pane(window_id, remote_id)?;
@@ -409,7 +424,9 @@ impl TmuxDomainState {
                             pane_left: x.pane_left,
                             pane_top: x.pane_top,
                         };
-                        let local_pane = self.create_pane(&p).context("failed to create pane")?;
+                        let local_pane = self
+                            .create_pane(&p, None)
+                            .context("failed to create pane")?;
                         tab.assign_pane(&local_pane);
                         self.add_attached_pane(p.window_id, p.pane_id)?;
                         let _ = mux.add_pane(&local_pane);
@@ -443,7 +460,9 @@ impl TmuxDomainState {
                     };
                     let local_pane;
                     if !self.check_pane_attached(p.window_id, p.pane_id) {
-                        local_pane = self.create_pane(&p).context("failed to create pane")?;
+                        local_pane = self
+                            .create_pane(&p, None)
+                            .context("failed to create pane")?;
                         self.add_attached_pane(p.window_id, p.pane_id)?;
                         let _ = mux.add_pane(&local_pane);
                         if let None = tab.get_active_pane() {

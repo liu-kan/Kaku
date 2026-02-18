@@ -107,11 +107,37 @@ THEME_EOF
 echo -e "${GREEN}done ✅${NC}"
 
 echo -n "  Writing OpenCode config... "
-cat > "$CONFIG_FILE" << 'CONFIG_EOF'
+if [[ -f "$CONFIG_FILE" ]]; then
+    # Merge theme into existing config to preserve user settings
+    TMPFILE=$(mktemp)
+    if command -v python3 &>/dev/null; then
+        python3 -c "
+import json, sys
+try:
+    with open('$CONFIG_FILE') as f:
+        cfg = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    cfg = {}
+cfg['theme'] = 'wezterm-match'
+with open('$TMPFILE', 'w') as f:
+    json.dump(cfg, f, indent=2)
+" && mv "$TMPFILE" "$CONFIG_FILE"
+    else
+        # Fallback: overwrite if python3 not available
+        rm -f "$TMPFILE"
+        cat > "$CONFIG_FILE" << 'CONFIG_EOF'
 {
   "theme": "wezterm-match"
 }
 CONFIG_EOF
+    fi
+else
+    cat > "$CONFIG_FILE" << 'CONFIG_EOF'
+{
+  "theme": "wezterm-match"
+}
+CONFIG_EOF
+fi
 echo -e "${GREEN}done ✅${NC}"
 
 echo ""

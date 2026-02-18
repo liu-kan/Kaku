@@ -1,3 +1,4 @@
+use crate::customglyph::{BlockAlpha, BlockCoord, Poly, PolyCommand, PolyStyle};
 use crate::termwindow::box_model::*;
 use crate::termwindow::{DimensionContext, RenderFrame, TermWindowNotif};
 use crate::utilsprites::RenderMetrics;
@@ -365,7 +366,33 @@ impl crate::TermWindow {
             return Ok(());
         }
 
+        let num_panes = panes.len();
+        let mut active_pane_top_right: Option<(f32, f32, bool)> = None;
+
         for pos in panes {
+            if pos.is_active && num_panes > 1 {
+                let cell_width = self.render_metrics.cell_size.width as f32;
+                let cell_height = self.render_metrics.cell_size.height as f32;
+                let (padding_left, _padding_top) = self.padding_left_top();
+                let border = self.get_os_border();
+                let tab_bar_height = if self.show_tab_bar {
+                    self.tab_bar_pixel_height().unwrap_or(0.)
+                } else {
+                    0.
+                };
+                let top_pixel_y = if self.config.tab_bar_at_bottom {
+                    0.0
+                } else {
+                    tab_bar_height
+                } + border.top.get() as f32;
+
+                let x = padding_left
+                    + border.left.get() as f32
+                    + ((pos.left + pos.width) as f32 * cell_width);
+                let y = top_pixel_y + (pos.top as f32 * cell_height);
+                let is_top_pane = pos.top == 0;
+                active_pane_top_right = Some((x, y, is_top_pane));
+            }
             if pos.is_active {
                 self.update_text_cursor(&pos);
                 if focused {
@@ -374,6 +401,41 @@ impl crate::TermWindow {
                 }
             }
             self.paint_pane(&pos, &mut layers).context("paint_pane")?;
+        }
+
+        // Draw dot indicator for the active pane when split
+        if let Some((dot_x, dot_y, is_top_pane)) = active_pane_top_right {
+            const DOT_SIZE: f32 = 12.0;
+            const DOT_ALPHA: f32 = 0.5;
+            const MARGIN_TOP_FOR_TOP_PANE: f32 = 50.0;
+            const MARGIN_TOP_FOR_LOWER_PANE: f32 = 72.0;
+
+            let margin_top = if is_top_pane {
+                MARGIN_TOP_FOR_TOP_PANE
+            } else {
+                MARGIN_TOP_FOR_LOWER_PANE
+            };
+            let dot_color = self.palette().cursor_bg.to_linear().mul_alpha(DOT_ALPHA);
+
+            static CIRCLE_POLY: &[Poly] = &[Poly {
+                path: &[PolyCommand::Circle {
+                    center: (BlockCoord::Frac(1, 2), BlockCoord::Frac(1, 2)),
+                    radius: BlockCoord::Frac(1, 2),
+                }],
+                intensity: BlockAlpha::Full,
+                style: PolyStyle::Fill,
+            }];
+
+            self.poly_quad(
+                &mut layers,
+                2,
+                euclid::point2(dot_x - DOT_SIZE, dot_y + margin_top),
+                CIRCLE_POLY,
+                1,
+                euclid::size2(DOT_SIZE, DOT_SIZE),
+                dot_color,
+            )
+            .context("active pane indicator")?;
         }
 
         if let Some(pane) = self.get_active_pane_or_overlay() {

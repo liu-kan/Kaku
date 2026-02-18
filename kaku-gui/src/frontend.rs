@@ -402,6 +402,7 @@ impl GuiFrontEnd {
                     SpawnTabDomain::DomainName("local".to_string()),
                     cmd,
                     cwd,
+                    None,
                     TerminalSize::default(),
                     pane_id,
                     workspace,
@@ -425,6 +426,67 @@ impl GuiFrontEnd {
         })
         .detach();
     }
+    fn activate_tab_for_tty(tty_name: String) {
+        let tty_name = tty_name.trim().to_string();
+        if tty_name.is_empty() {
+            log::warn!("ActivatePaneForTty called with empty tty");
+            return;
+        }
+
+        let mut tty_candidates = vec![tty_name.clone()];
+        if let Some(stripped) = tty_name.strip_prefix("/dev/") {
+            tty_candidates.push(stripped.to_string());
+        } else {
+            tty_candidates.push(format!("/dev/{tty_name}"));
+        }
+        tty_candidates.sort();
+        tty_candidates.dedup();
+
+        let target_basename = Path::new(&tty_name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.to_string());
+
+        let mux = Mux::get();
+        let pane_id = mux.iter_panes().into_iter().find_map(|pane| {
+            let pane_tty = pane.tty_name()?;
+            if tty_candidates
+                .iter()
+                .any(|candidate| candidate == &pane_tty)
+            {
+                return Some(pane.pane_id());
+            }
+
+            if let Some(target_basename) = target_basename.as_deref() {
+                let pane_basename = Path::new(&pane_tty)
+                    .file_name()
+                    .and_then(|name| name.to_str());
+                if pane_basename == Some(target_basename) {
+                    return Some(pane.pane_id());
+                }
+            }
+
+            None
+        });
+
+        let Some(pane_id) = pane_id else {
+            log::warn!("No pane found for tty={tty_name}");
+            return;
+        };
+
+        if let Err(err) = mux.focus_pane_and_containing_tab(pane_id) {
+            log::error!("Failed to focus pane {pane_id} for tty={tty_name}: {err:#}");
+            return;
+        }
+
+        if let Some((_domain, window_id, _tab_id)) = mux.resolve_pane_id(pane_id) {
+            if let Some(fe) = try_front_end() {
+                if let Some(gui_window) = fe.gui_window_for_mux_window(window_id) {
+                    gui_window.window.focus();
+                }
+            }
+        }
+    }
 
     fn app_event_handler(event: ApplicationEvent) {
         match event {
@@ -433,6 +495,9 @@ impl GuiFrontEnd {
             }
             ApplicationEvent::OpenCommandScriptInTab(file_name) => {
                 Self::spawn_open_command_script(file_name, true);
+            }
+            ApplicationEvent::ActivatePaneForTty(tty_name) => {
+                Self::activate_tab_for_tty(tty_name);
             }
             ApplicationEvent::PerformKeyAssignment(action) => {
                 // We should only get here when there are no windows open
@@ -614,7 +679,13 @@ impl GuiFrontEnd {
                     .insert(mux_window_id);
                 log::trace!("Creating TermWindow for mux_window_id={}", mux_window_id);
                 if let Err(err) = TermWindow::new_window(mux_window_id).await {
+                    let err_text = format!("{:#}", err);
                     log::error!("Failed to create window: {:#}", err);
+                    if err_text.contains("failed to create NSOpenGLPixelFormat") {
+                        log::error!(
+                            "OpenGL initialization failed. This often means no compatible GPU renderer is available (for example in some VMs). Try setting `front_end = 'WebGpu'` in kaku.lua or enabling VM GPU acceleration."
+                        );
+                    }
                     let mux = Mux::get();
                     mux.kill_window(mux_window_id);
                     front_end()

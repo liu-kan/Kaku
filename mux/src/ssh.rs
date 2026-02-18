@@ -5,6 +5,7 @@ use crate::pane::{alloc_pane_id, Pane, PaneId};
 use crate::Mux;
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
+use config::keyassignment::PaneEncoding;
 use config::{Shell, SshBackend, SshDomain};
 use filedescriptor::{poll, pollfd, socketpair, AsRawSocketDescriptor, FileDescriptor, POLLIN};
 use portable_pty::cmdbuilder::CommandBuilder;
@@ -13,6 +14,7 @@ use smol::channel::{bounded, Receiver as AsyncReceiver};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufWriter, Read, Write};
+use std::sync::atomic::AtomicU8;
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -704,6 +706,7 @@ impl Domain for RemoteSshDomain {
         size: TerminalSize,
         command: Option<CommandBuilder>,
         command_dir: Option<String>,
+        encoding: PaneEncoding,
     ) -> anyhow::Result<Arc<dyn Pane>> {
         let pane_id = alloc_pane_id();
 
@@ -757,7 +760,8 @@ impl Domain for RemoteSshDomain {
         // eg: tmux integration to be tunnelled via the remote
         // session without duplicating a lot of logic over here.
 
-        let writer = WriterWrapper::new(writer);
+        let encoding = Arc::new(AtomicU8::new(encoding.to_u8()));
+        let writer = WriterWrapper::new(writer, Arc::clone(&encoding));
 
         let terminal = wezterm_term::Terminal::new(
             size,
@@ -774,6 +778,7 @@ impl Domain for RemoteSshDomain {
             pty,
             Box::new(writer),
             self.id,
+            encoding,
             "RemoteSshDomain".to_string(),
         ));
         let mux = Mux::get();

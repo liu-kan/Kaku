@@ -239,10 +239,24 @@ exit 127
         let theme_file = themes_dir.join("wezterm-match.json");
         std::fs::write(&theme_file, theme_content).context("write opencode theme file")?;
 
-        let config_content = r#"{
+        let config_content = if opencode_config.exists() {
+            let existing =
+                std::fs::read_to_string(&opencode_config).context("read opencode config file")?;
+            let mut json: serde_json::Value =
+                serde_json::from_str(&existing).unwrap_or_else(|_| serde_json::json!({}));
+            if let Some(obj) = json.as_object_mut() {
+                obj.insert(
+                    "theme".to_string(),
+                    serde_json::Value::String("wezterm-match".to_string()),
+                );
+            }
+            serde_json::to_string_pretty(&json).unwrap_or_else(|_| existing)
+        } else {
+            r#"{
   "theme": "wezterm-match"
-}
-"#;
+}"#
+            .to_string()
+        };
 
         std::fs::write(&opencode_config, config_content).context("write opencode config file")?;
         println!("OpenCode theme configured successfully.");
