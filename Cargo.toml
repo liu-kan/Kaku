@@ -145,7 +145,7 @@ libssh-rs = "0.3.6"
 line_drawing = "0.8"
 log = "0.4"
 logging = { path = "lua-api-crates/logging" }
-lru = "0.16"
+lru = "0.18"
 luahelper = { path = "crates/luahelper" }
 maplit = "1.0"
 memmap2 = "0.9"
